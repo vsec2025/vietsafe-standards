@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Force reprocess all files'
+        description: 'Rebuild toan bo index'
         required: false
         default: 'false'
 
@@ -27,23 +27,15 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install anthropic pdfplumber python-docx PyPDF2
-
       - name: Run pipeline
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          if [ "${{ github.event.inputs.force }}" = "true" ]; then
-            python scripts/process.py --force
-          else
-            python scripts/process.py
-          fi
+          cd scripts
+          python pipeline.py
 
       - name: Commit results
         run: |
           git config --global user.name "VIETSAFE Pipeline Bot"
           git config --global user.email "pipeline@vnsec.com.vn"
           git add data/
-          git diff --staged --quiet || git commit -m "auto: cap nhat .md va index.json [skip ci]"
+          git diff --staged --quiet || git commit -m "auto: cap nhat chunks va index [skip ci]"
           git push
