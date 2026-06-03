@@ -2,48 +2,48 @@ name: Process Standards Pipeline
 
 on:
   push:
-      paths:
-            - 'raw/**'
-              workflow_dispatch:
-                  inputs:
-                        force:
-                                description: 'Force reprocess all files'
-                                        required: false
-                                                default: 'false'
+    paths:
+      - 'raw/**'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force reprocess all files'
+        required: false
+        default: 'false'
 
-                                                jobs:
-                                                  process:
-                                                      runs-on: ubuntu-latest
-                                                          permissions:
-                                                                contents: write
-                                                                    steps:
-                                                                          - name: Checkout repo
-                                                                                  uses: actions/checkout@v4
-                                                                                          with:
-                                                                                                    token: ${{ secrets.GITHUB_TOKEN }}
-                                                                                                    
-                                                                                                          - name: Setup Python
-                                                                                                                  uses: actions/setup-python@v5
-                                                                                                                          with:
-                                                                                                                                    python-version: '3.11'
-                                                                                                                                    
-                                                                                                                                          - name: Install dependencies
-                                                                                                                                                  run: pip install anthropic pdfplumber python-docx PyPDF2
-                                                                                                                                                  
-                                                                                                                                                        - name: Run pipeline
-                                                                                                                                                                env:
-                                                                                                                                                                          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-                                                                                                                                                                                  run: |
-                                                                                                                                                                                            if [ "${{ github.event.inputs.force }}" = "true" ]; then
-                                                                                                                                                                                                        python scripts/process.py --force
-                                                                                                                                                                                                                  else
-                                                                                                                                                                                                                              python scripts/process.py
-                                                                                                                                                                                                                                        fi
-                                                                                                                                                                                                                                        
-                                                                                                                                                                                                                                              - name: Commit results
-                                                                                                                                                                                                                                                      run: |
-                                                                                                                                                                                                                                                                git config --global user.name "VIETSAFE Pipeline Bot"
-                                                                                                                                                                                                                                                                          git config --global user.email "pipeline@vnsec.com.vn"
-                                                                                                                                                                                                                                                                                    git add data/
-                                                                                                                                                                                                                                                                                              git diff --staged --quiet || git commit -m "auto: cap nhat .md va index.json [skip ci]"
-                                                                                                                                                                                                                                                                                                        git push
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install anthropic pdfplumber python-docx PyPDF2
+
+      - name: Run pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            python scripts/process.py --force
+          else
+            python scripts/process.py
+          fi
+
+      - name: Commit results
+        run: |
+          git config --global user.name "VIETSAFE Pipeline Bot"
+          git config --global user.email "pipeline@vnsec.com.vn"
+          git add data/
+          git diff --staged --quiet || git commit -m "auto: cap nhat .md va index.json [skip ci]"
+          git push
