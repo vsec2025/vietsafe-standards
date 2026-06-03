@@ -14,18 +14,30 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const res = await signIn('credentials', {
-      username, password, redirect: false,
-    })
+    
+    try {
+      const res = await signIn('credentials', {
+        username,
+        password,
+        redirect: false,
+        callbackUrl: '/'
+      })
+      
+      if (res?.ok && !res?.error) {
+        router.push('/')
+        router.refresh()
+      } else {
+        setError('Tên đăng nhập hoặc mật khẩu không đúng')
+      }
+    } catch (err) {
+      setError('Có lỗi xảy ra. Vui lòng thử lại.')
+    }
     setLoading(false)
-    if (res?.ok) router.push('/')
-    else setError('Tên đăng nhập hoặc mật khẩu không đúng')
   }
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
       <div className="bg-white rounded-xl shadow-lg w-full max-w-md overflow-hidden">
-        {/* Header đỏ */}
         <div className="bg-[#C8102E] p-6 text-white text-center">
           <div className="text-2xl font-bold tracking-wide">VIETSAFE E&C</div>
           <div className="text-sm mt-1 opacity-90">Hệ thống Tiêu chuẩn & Quy chuẩn PCCC</div>
@@ -37,7 +49,7 @@ export default function LoginPage() {
             <input
               type="text" value={username} onChange={e => setUsername(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-              placeholder="username@vnsec.com.vn" required
+              placeholder="username@vnsec.com.vn" required autoComplete="username"
             />
           </div>
           <div>
@@ -45,7 +57,7 @@ export default function LoginPage() {
             <input
               type="password" value={password} onChange={e => setPassword(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-              placeholder="••••••••" required
+              placeholder="••••••••" required autoComplete="current-password"
             />
           </div>
           {error && <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg">{error}</div>}
