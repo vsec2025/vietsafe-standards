@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { getRedis, keys } from './redis'
-import { User, UserRole } from '@/types'
+import { User, UserRole } from '../types'
 
 export async function createUser(
   username: string,
@@ -31,10 +31,11 @@ export async function verifyUser(username: string, password: string): Promise<Us
   const userData = await redis.get<any>(keys.user(userId))
   if (!userData) return null
   
-  const valid = await bcrypt.compare(password, userData.passwordHash)
+  const data = typeof userData === 'string' ? JSON.parse(userData) : userData
+  const valid = await bcrypt.compare(password, data.passwordHash)
   if (!valid) return null
   
-  const { passwordHash, ...user } = userData
+  const { passwordHash, ...user } = data
   return user as User
 }
 
@@ -42,7 +43,8 @@ export async function getUserById(id: string): Promise<User | null> {
   const redis = getRedis()
   const userData = await redis.get<any>(keys.user(id))
   if (!userData) return null
-  const { passwordHash, ...user } = userData
+  const data = typeof userData === 'string' ? JSON.parse(userData) : userData
+  const { passwordHash, ...user } = data
   return user as User
 }
 
@@ -52,18 +54,4 @@ export async function getAllUsers(): Promise<User[]> {
   if (!ids.length) return []
   const users = await Promise.all(ids.map(id => getUserById(id as string)))
   return users.filter(Boolean) as User[]
-}
-
-export async function initAdminUser() {
-  const redis = getRedis()
-  const existing = await redis.get(keys.userByUsername('namnt@vnsec.com.vn'))
-  if (!existing) {
-    await createUser(
-      'namnt@vnsec.com.vn',
-      'CongtyVSEC@2025',
-      'admin',
-      'Nguyễn Thanh Nam'
-    )
-    console.log('Admin user created')
-  }
 }
