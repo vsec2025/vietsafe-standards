@@ -1,0 +1,93 @@
+import { NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { searchDocuments } from '@/lib/search'
+import { getChatHistory, saveChatMessage } from '@/lib/redis'
+
+export async function POST(request) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 })
+    }
+
+    const { message, history } = await request.json()
+    if (!message || typeof message !== 'string') {
+      return NextResponse.json({ error: 'Tin nhắn không hợp lệ' }, { status: 400 })
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey || apiKey === 'placeholder') {
+      return NextResponse.json({ error: 'Chưa cấu hình API key' }, { status: 500 })
+    }
+
+    // RAG: search relevant chunks
+    const searchResults = await searchDocuments(message, 5)
+    const context = searchResults
+      .map(r => `[${r.doc_id || r.source || 'N/A'}] ${r.text || r.content || ''}`)
+      .join('\n\n')
+
+    const systemPrompt = `Bạn là trợ lý chuyên về tiêu chuẩn PCCC (phòng cháy chữa cháy) Việt Nam. 
+Trả lời bằng tiếng Việt, chính xác, trích dẫn điều khoản cụ thể khi có.
+Nếu không tìm thấy thông tin trong ngữ cảnh, hãy nói rõ.
+
+NGỮ CẢNH TỪ CƠ SỞ DỮ LIỆU:
+${context || '(Không tìm thấy văn bản liên quan)'}`
+
+    const messages = [
+      ...(history || []).slice(-10),
+      { role: 'user', content: message }
+    ]
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: messages
+      })
+    })
+
+    if (!response.ok) {
+      const errData = await response.text()
+      console.error('Anthropic API error:', errData)
+      return NextResponse.json({ error: 'Lỗi gọi AI' }, { status: 502 })
+    }
+
+    const data = await response.json()
+    const reply = data.content?.[0]?.text || 'Không có phản hồi'
+
+    // Save chat history
+    const month = new Date().toISOString().slice(0, 7) // YYYY-MM
+    try {
+      const existing = await getChatHistory(session.user.email, month)
+      const updated = [
+        ...existing,
+        { role: 'user', content: message, timestamp: new Date().toISOString() },
+        { role: 'assistant', content: reply, timestamp: new Date().toISOString() }
+      ]
+      // Keep last 200 messages per month
+      await saveChatMessage(session.user.email, month, updated.slice(-200))
+    } catch (e) {
+      console.error('Chat history save error:', e)
+    }
+
+    return NextResponse.json({
+      reply,
+      sources: searchResults.map(r => ({
+        doc_id: r.doc_id || r.source,
+        chunk_id: r.chunk_id || r.id,
+        preview: (r.text || r.content || '').slice(0, 100)
+      }))
+    })
+  } catch (err) {
+    console.error('Chat error:', err)
+    return NextResponse.json({ error: 'Lỗi hệ thống' }, { status: 500 })
+  }
+}

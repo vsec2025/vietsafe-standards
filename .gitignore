@@ -1,11 +1,7 @@
-__pycache__/
-*.pyc
-.env
-.DS_Store
-*.egg-info/
-dist/
-build/
 node_modules/
 .next/
-.vercel/
-webapp/.env.local
+out/
+.env.local
+.env*.local
+.DS_Store
+*.tsbuildinfo

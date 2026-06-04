@@ -1,0 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --vs-red: #C8102E;
+  --vs-red-dark: #A00D24;
+  --vs-white: #FFFFFF;
+  --vs-dark: #1A1A1A;
+  --vs-gray: #333333;
+  --vs-gray-light: #F0F0F0;
+  --vs-gray-mid: #666666;
+  --vs-gray-border: #999999;
+}
+
+body {
+  font-family: 'Montserrat', Arial, sans-serif;
+  color: var(--vs-gray);
+  background: var(--vs-white);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--vs-gray-light); }
+::-webkit-scrollbar-thumb { background: var(--vs-gray-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--vs-gray-mid); }
+
+/* Utility */
+.vs-header-bar {
+  background: var(--vs-red);
+  height: 4px;
+  width: 100%;
+}
+
+.vs-btn-primary {
+  @apply px-4 py-2 text-white font-medium rounded transition-colors;
+  background: var(--vs-red);
+}
+.vs-btn-primary:hover {
+  background: var(--vs-red-dark);
+}
+
+.vs-input {
+  @apply w-full px-3 py-2 border rounded font-montserrat text-sm;
+  border-color: #ddd;
+}
+.vs-input:focus {
+  @apply outline-none ring-2;
+  ring-color: var(--vs-red);
+  border-color: var(--vs-red);
+}
