@@ -1,16 +1,37 @@
-// Upstash Redis via REST API - no SDK needed
+// Upstash Redis REST API - no SDK
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL!
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN!
 
 async function redisCmd(...args: (string | number)[]): Promise<any> {
-  const res = await fetch(`${REDIS_URL}`, {
-    method: 'POST',
+  const cmd = args[0] as string
+  const params = args.slice(1)
+  
+  // Dung pipeline endpoint de tranh bi chan
+  const url = `${REDIS_URL}/${cmd}/${params.map(p => encodeURIComponent(String(p))).join('/')}`
+  
+  const res = await fetch(url, {
+    method: 'GET',
     headers: {
       Authorization: `Bearer ${REDIS_TOKEN}`,
-      'Content-Type': 'application/json',
     },
-    body: JSON.stringify(args),
+    cache: 'no-store',
   })
+  
+  if (!res.ok) {
+    // Fallback: dung POST
+    const res2 = await fetch(REDIS_URL, {
+      method: 'POST', 
+      headers: {
+        Authorization: `Bearer ${REDIS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(args),
+      cache: 'no-store',
+    })
+    const data2 = await res2.json()
+    return data2.result
+  }
+  
   const data = await res.json()
   return data.result
 }
@@ -19,7 +40,7 @@ export function getRedis() {
   return {
     async get<T>(key: string): Promise<T | null> {
       const result = await redisCmd('GET', key)
-      if (!result) return null
+      if (result === null || result === undefined) return null
       try { return JSON.parse(result as string) as T }
       catch { return result as T }
     },
@@ -36,7 +57,7 @@ export function getRedis() {
     },
     async smembers(key: string): Promise<string[]> {
       const result = await redisCmd('SMEMBERS', key)
-      return (result as string[]) || []
+      return Array.isArray(result) ? result as string[] : []
     },
     async lpush(key: string, ...values: string[]): Promise<void> {
       await redisCmd('LPUSH', key, ...values)
@@ -46,7 +67,7 @@ export function getRedis() {
     },
     async lrange(key: string, start: number, stop: number): Promise<string[]> {
       const result = await redisCmd('LRANGE', key, start, stop)
-      return (result as string[]) || []
+      return Array.isArray(result) ? result as string[] : []
     },
     async del(key: string): Promise<void> {
       await redisCmd('DEL', key)
@@ -57,11 +78,11 @@ export function getRedis() {
 export const keys = {
   user: (id: string) => `user:${id}`,
   userByUsername: (username: string) => `username:${username}`,
-  allUsers: () => 'users:all',
+  allUsers: () => `users:all`,
   usage: (userId: string, date: string) => `usage:${userId}:${date}`,
   chat: (userId: string, month: string) => `chat:${userId}:${month}`,
-  docMeta: (soHieu: string) => `doc:${soHieu.replace(/\/g, '_').replace(/:/g, '_')}`,
-  allDocs: () => 'docs:all',
+  docMeta: (soHieu: string) => `doc:${soHieu.replace(/[/:]/g, '_')}`,
+  allDocs: () => `docs:all`,
 }
 
 export function getVNDate(): string {
