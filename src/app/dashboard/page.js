@@ -10,7 +10,7 @@ import ChatPanel from '@/components/ChatPanel'
 export default function DashboardPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [activePanel, setActivePanel] = useState('search') // mobile toggle
+  const [activePanel, setActivePanel] = useState('chat') // mobile toggle
   const [selectedDoc, setSelectedDoc] = useState(null)
 
   useEffect(() => {
@@ -60,25 +60,25 @@ export default function DashboardPage() {
 
       {/* Main 3-column layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar - documents */}
-        <div className={`w-72 border-r border-gray-200 flex-shrink-0 overflow-hidden ${
+        {/* Left - documents sidebar */}
+        <div className={`w-64 border-r border-gray-200 flex-shrink-0 overflow-hidden ${
           activePanel === 'docs' ? 'block' : 'hidden lg:block'
         }`}>
           <Sidebar onDocSelect={setSelectedDoc} />
         </div>
 
-        {/* Center - search */}
+        {/* Center - AI Chat (main area) */}
         <div className={`flex-1 min-w-0 overflow-hidden ${
-          activePanel === 'search' ? 'block' : 'hidden lg:block'
-        }`}>
-          <SearchPanel />
-        </div>
-
-        {/* Right - chat */}
-        <div className={`w-96 border-l border-gray-200 flex-shrink-0 overflow-hidden ${
           activePanel === 'chat' ? 'block' : 'hidden lg:block'
         }`}>
           <ChatPanel />
+        </div>
+
+        {/* Right - Search */}
+        <div className={`w-[420px] border-l border-gray-200 flex-shrink-0 overflow-hidden ${
+          activePanel === 'search' ? 'block' : 'hidden lg:block'
+        }`}>
+          <SearchPanel />
         </div>
       </div>
 

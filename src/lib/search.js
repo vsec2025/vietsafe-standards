@@ -124,3 +124,30 @@ export function searchDocuments(query, limit = 10) {
     return search(query, chunks, index, limit)
   })
 }
+
+// Exact phrase search - finds chunks containing the exact phrase
+export function exactSearch(phrase, limit = 20) {
+  return loadSearchData().then(({ chunks }) => {
+    if (!chunks || !chunks.length) return []
+    const lower = phrase.toLowerCase()
+    const results = []
+    
+    chunks.forEach((chunk, i) => {
+      const content = (chunk.content || chunk.text || '').toLowerCase()
+      const idx = content.indexOf(lower)
+      if (idx !== -1) {
+        // Score based on how early the match appears and frequency
+        const freq = (content.match(new RegExp(lower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')) || []).length
+        results.push({
+          ...chunk,
+          score: freq * 10 + (1 - idx / content.length) * 5,
+          _index: i
+        })
+      }
+    })
+    
+    return results
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+  })
+}

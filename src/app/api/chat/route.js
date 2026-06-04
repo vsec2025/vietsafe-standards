@@ -24,14 +24,21 @@ export async function POST(request) {
     // RAG: search relevant chunks
     const searchResults = await searchDocuments(message, 5)
     const context = searchResults
-      .map(r => `[${r.doc_id || r.source || 'N/A'}] ${r.text || r.content || ''}`)
-      .join('\n\n')
+      .map(r => {
+        const doc = r.loai === 'LUAT' ? (r.van_ban || 'Luật PCCC') 
+          : r.loai === 'QCVN' ? 'QCVN 06:2022/BXD' 
+          : r.loai === 'TCVN' ? 'TCVN 7336:2021' : 'N/A'
+        const section = [r.phan, r.don_vi, r.tieu_de].filter(Boolean).join(' - ')
+        return `[${doc} | ${section}]\n${r.content || r.text || ''}`
+      })
+      .join('\n\n---\n\n')
 
-    const systemPrompt = `Bạn là trợ lý chuyên về tiêu chuẩn PCCC (phòng cháy chữa cháy) Việt Nam. 
-Trả lời bằng tiếng Việt, chính xác, trích dẫn điều khoản cụ thể khi có.
-Nếu không tìm thấy thông tin trong ngữ cảnh, hãy nói rõ.
+    const systemPrompt = `Bạn là trợ lý chuyên về tiêu chuẩn PCCC (phòng cháy chữa cháy) Việt Nam của Công ty VIETSAFE E&C.
+Trả lời bằng tiếng Việt, chính xác, trích dẫn điều khoản cụ thể.
+Sử dụng Markdown để format: dùng bảng khi so sánh dữ liệu, heading cho các phần, bold cho từ khóa quan trọng, bullet list cho liệt kê.
+Nếu không tìm thấy thông tin, nói rõ và gợi ý hướng tra cứu.
 
-NGỮ CẢNH TỪ CƠ SỞ DỮ LIỆU:
+NGỮ CẢNH TỪ CƠ SỞ DỮ LIỆU PCCC:
 ${context || '(Không tìm thấy văn bản liên quan)'}`
 
     const messages = [
@@ -80,11 +87,13 @@ ${context || '(Không tìm thấy văn bản liên quan)'}`
 
     return NextResponse.json({
       reply,
-      sources: searchResults.map(r => ({
-        doc_id: r.doc_id || r.source,
-        chunk_id: r.chunk_id || r.id,
-        preview: (r.text || r.content || '').slice(0, 100)
-      }))
+      sources: searchResults.map(r => {
+        const doc = r.loai === 'LUAT' ? (r.van_ban || 'Luật PCCC')
+          : r.loai === 'QCVN' ? 'QCVN 06:2022/BXD'
+          : r.loai === 'TCVN' ? 'TCVN 7336:2021' : r.loai
+        const section = [r.don_vi, r.tieu_de].filter(Boolean).join(' — ')
+        return { label: `${doc} | ${section}` }
+      })
     })
   } catch (err) {
     console.error('Chat error:', err)
