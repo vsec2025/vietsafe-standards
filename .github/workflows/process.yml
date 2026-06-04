@@ -1,0 +1,33 @@
+name: Process PCCC Standards
+
+on:
+  push:
+    paths:
+      - 'raw/**/*.md'
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run pipeline
+        run: |
+          mkdir -p data/clean
+          python3 scripts/pipeline.py
+
+      - name: Copy chunks to webapp
+        run: cp data/chunks.jsonl public/data/chunks.jsonl
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data/chunks.jsonl data/
+          git diff --staged --quiet || git commit -m "auto: pipeline - $(date +%Y%m%d) - $(wc -l < public/data/chunks.jsonl) chunks"
+          git push

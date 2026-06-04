@@ -1,0 +1,21 @@
+{
+  "last_updated": "2026-06-04T05:47:08Z",
+  "total_chunks": 252,
+  "van_ban": [
+    {
+      "so_hieu": "",
+      "chunks": 76,
+      "tokens": 105739
+    },
+    {
+      "so_hieu": "TCVN ",
+      "chunks": 13,
+      "tokens": 19262
+    },
+    {
+      "so_hieu": "55/2024/QH15",
+      "chunks": 163,
+      "tokens": 129495
+    }
+  ]
+}
