@@ -72,7 +72,7 @@ export async function POST(request) {
         id: `doc_${Date.now()}`,
         title: file.name.replace('.md', '').replace(/[-_]/g, ' '),
         filename: file.name,
-        status: 'pending',
+        status: 'active',
         uploadedBy: session.user.email,
         uploadedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
