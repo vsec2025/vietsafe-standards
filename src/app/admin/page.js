@@ -17,6 +17,11 @@ export default function AdminPage() {
   const [uploadResult, setUploadResult] = useState(null)
   const fileRef = useRef(null)
 
+  // Pipeline status
+  const [pipelineRuns, setPipelineRuns] = useState([])
+  const [pipelineLoading, setPipelineLoading] = useState(false)
+  const pollRef = useRef(null)
+
   // Edit doc state
   const [editDoc, setEditDoc] = useState(null)
   const [editTitle, setEditTitle] = useState('')
@@ -40,6 +45,32 @@ export default function AdminPage() {
     finally { setLoading(false) }
   }
 
+  async function fetchPipelineStatus() {
+    setPipelineLoading(true)
+    try {
+      const res = await fetch('/api/pipeline-status')
+      const data = await res.json()
+      setPipelineRuns(data.runs || [])
+      return data.runs || []
+    } catch (err) { console.error(err); return [] }
+    finally { setPipelineLoading(false) }
+  }
+
+  function startPolling() {
+    if (pollRef.current) clearInterval(pollRef.current)
+    fetchPipelineStatus()
+    pollRef.current = setInterval(async () => {
+      const runs = await fetchPipelineStatus()
+      // Stop polling if latest run completed
+      if (runs.length > 0 && runs[0].status === 'completed') {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+    }, 8000) // Poll every 8s
+  }
+
+  useEffect(() => { return () => { if (pollRef.current) clearInterval(pollRef.current) } }, [])
+
   async function handleUpload() {
     const file = fileRef.current?.files?.[0]
     if (!file) return setUploadResult({ ok: false, msg: 'Chọn file .md trước' })
@@ -55,6 +86,7 @@ export default function AdminPage() {
       if (data.success) {
         setUploadResult({ ok: true, msg: data.message })
         fileRef.current.value = ''
+        startPolling() // Auto-track pipeline
       } else {
         setUploadResult({ ok: false, msg: data.error })
       }
@@ -162,6 +194,58 @@ export default function AdminPage() {
               )}
 
               <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-vs-dark">Tiến trình Pipeline:</h3>
+                  <button
+                    onClick={startPolling}
+                    disabled={pipelineLoading}
+                    className="text-xs px-3 py-1 text-vs-red border border-vs-red rounded hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {pipelineLoading ? 'Đang kiểm tra...' : 'Kiểm tra trạng thái'}
+                  </button>
+                </div>
+
+                {pipelineRuns.length > 0 ? (
+                  <div className="space-y-2">
+                    {pipelineRuns.map(run => (
+                      <div key={run.id} className="flex items-center gap-3 p-2.5 bg-white rounded border text-xs">
+                        {/* Status icon */}
+                        <div className="flex-shrink-0">
+                          {run.status === 'completed' && run.conclusion === 'success' ? (
+                            <span className="text-green-500 text-lg">✅</span>
+                          ) : run.status === 'completed' && run.conclusion === 'failure' ? (
+                            <span className="text-red-500 text-lg">❌</span>
+                          ) : run.status === 'in_progress' ? (
+                            <span className="inline-block w-4 h-4 border-2 border-vs-red border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <span className="text-yellow-500 text-lg">⏳</span>
+                          )}
+                        </div>
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-vs-dark truncate">{run.commit || run.name}</p>
+                          <p className="text-vs-gray-mid">
+                            {run.status === 'completed' 
+                              ? (run.conclusion === 'success' ? 'Hoàn thành' : 'Thất bại')
+                              : run.status === 'in_progress' ? 'Đang xử lý...' 
+                              : 'Đang chờ...'}
+                            {' • '}{new Date(run.updated).toLocaleTimeString('vi-VN')}
+                          </p>
+                        </div>
+                        {/* Link */}
+                        <a href={run.url} target="_blank" rel="noopener noreferrer"
+                          className="text-vs-red hover:underline flex-shrink-0">
+                          Chi tiết →
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-vs-gray-mid">Nhấn &quot;Kiểm tra trạng thái&quot; để xem tiến trình pipeline</p>
+                )}
+              </div>
+
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                 <h3 className="text-sm font-semibold text-vs-dark mb-2">Quy trình tự động:</h3>
                 <div className="flex items-center gap-2 text-xs text-vs-gray-mid flex-wrap">
                   <span className="px-2 py-1 bg-white rounded border">1. Upload .md</span>
