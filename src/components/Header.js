@@ -31,12 +31,12 @@ export default function Header() {
 
         {/* User info */}
         <div className="flex items-center gap-3">
-          {session?.user?.role === 'admin' && (
+          {['admin', 'editor'].includes(session?.user?.role) && (
             <button
               onClick={() => router.push('/admin')}
               className="text-xs px-3 py-1.5 border border-vs-red text-vs-red rounded hover:bg-red-50 transition font-medium"
             >
-              Quản trị
+              {session?.user?.role === 'admin' ? 'Quản trị' : 'Upload VB'}
             </button>
           )}
           <div className="text-right">
