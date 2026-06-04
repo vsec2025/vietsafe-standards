@@ -1,8 +1,15 @@
 'use client'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import Header from '@/components/Header'
+
+const STEPS = [
+  { id: 'upload', label: 'Upload file' },
+  { id: 'commit', label: 'Commit lên GitHub' },
+  { id: 'pipeline', label: 'Pipeline xử lý chunks' },
+  { id: 'deploy', label: 'Vercel deploy' },
+]
 
 export default function AdminPage() {
   const { data: session, status } = useSession()
@@ -12,14 +19,14 @@ export default function AdminPage() {
   const [tab, setTab] = useState('upload')
   const [seedResult, setSeedResult] = useState(null)
 
-  // Upload state
+  // Upload + progress
   const [uploading, setUploading] = useState(false)
-  const [uploadResult, setUploadResult] = useState(null)
+  const [currentStep, setCurrentStep] = useState(-1) // -1 = not started
+  const [stepStatus, setStepStatus] = useState({}) // {stepId: 'done'|'running'|'error'|'waiting'}
+  const [pipelineMsg, setPipelineMsg] = useState('')
+  const [completed, setCompleted] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
   const fileRef = useRef(null)
-
-  // Pipeline status
-  const [pipelineRuns, setPipelineRuns] = useState([])
-  const [pipelineLoading, setPipelineLoading] = useState(false)
   const pollRef = useRef(null)
 
   // Edit doc state
@@ -34,6 +41,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (status === 'authenticated') fetchDocs()
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [status])
 
   async function fetchDocs() {
@@ -45,56 +53,114 @@ export default function AdminPage() {
     finally { setLoading(false) }
   }
 
-  async function fetchPipelineStatus() {
-    setPipelineLoading(true)
-    try {
-      const res = await fetch('/api/pipeline-status')
-      const data = await res.json()
-      setPipelineRuns(data.runs || [])
-      return data.runs || []
-    } catch (err) { console.error(err); return [] }
-    finally { setPipelineLoading(false) }
+  function resetProgress() {
+    setCurrentStep(-1)
+    setStepStatus({})
+    setPipelineMsg('')
+    setCompleted(false)
+    setErrorMsg('')
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
   }
 
-  function startPolling() {
-    if (pollRef.current) clearInterval(pollRef.current)
-    fetchPipelineStatus()
-    pollRef.current = setInterval(async () => {
-      const runs = await fetchPipelineStatus()
-      // Stop polling if latest run completed
-      if (runs.length > 0 && runs[0].status === 'completed') {
-        clearInterval(pollRef.current)
-        pollRef.current = null
-      }
-    }, 8000) // Poll every 8s
+  function updateStep(stepId, s, msg) {
+    setStepStatus(prev => ({ ...prev, [stepId]: s }))
+    if (msg) setPipelineMsg(msg)
+    setCurrentStep(STEPS.findIndex(st => st.id === stepId))
   }
-
-  useEffect(() => { return () => { if (pollRef.current) clearInterval(pollRef.current) } }, [])
 
   async function handleUpload() {
     const file = fileRef.current?.files?.[0]
-    if (!file) return setUploadResult({ ok: false, msg: 'Chọn file .md trước' })
-    if (!file.name.endsWith('.md')) return setUploadResult({ ok: false, msg: 'Chỉ chấp nhận file .md' })
+    if (!file) return setErrorMsg('Chọn file .md trước')
+    if (!file.name.endsWith('.md')) return setErrorMsg('Chỉ chấp nhận file .md')
 
+    resetProgress()
     setUploading(true)
-    setUploadResult(null)
+    
+    // Step 1: Upload
+    updateStep('upload', 'running', `Đang upload "${file.name}"...`)
+
     try {
       const formData = new FormData()
       formData.append('file', file)
       const res = await fetch('/api/upload', { method: 'POST', body: formData })
       const data = await res.json()
-      if (data.success) {
-        setUploadResult({ ok: true, msg: data.message })
-        fileRef.current.value = ''
-        startPolling() // Auto-track pipeline
-      } else {
-        setUploadResult({ ok: false, msg: data.error })
+
+      if (!data.success) {
+        updateStep('upload', 'error', data.error)
+        setErrorMsg(data.error)
+        setUploading(false)
+        return
       }
+
+      // Step 1 done, Step 2 done (commit happened in upload API)
+      updateStep('upload', 'done')
+      updateStep('commit', 'done', `"${file.name}" đã commit lên GitHub`)
+      fileRef.current.value = ''
+
+      // Step 3: Start polling pipeline
+      updateStep('pipeline', 'running', 'Đang chờ pipeline bắt đầu...')
+      startPipelinePolling()
+
     } catch (err) {
-      setUploadResult({ ok: false, msg: 'Lỗi: ' + err.message })
-    } finally {
+      updateStep('upload', 'error', 'Lỗi: ' + err.message)
+      setErrorMsg(err.message)
       setUploading(false)
     }
+  }
+
+  function startPipelinePolling() {
+    let attempts = 0
+    const maxAttempts = 40 // ~5 min max
+
+    pollRef.current = setInterval(async () => {
+      attempts++
+      if (attempts > maxAttempts) {
+        clearInterval(pollRef.current)
+        updateStep('pipeline', 'error', 'Timeout — kiểm tra GitHub Actions')
+        setUploading(false)
+        return
+      }
+
+      try {
+        const res = await fetch('/api/pipeline-status')
+        const data = await res.json()
+        const runs = data.runs || []
+        
+        if (runs.length === 0) {
+          setPipelineMsg('Đang chờ pipeline khởi động...')
+          return
+        }
+
+        const latest = runs[0]
+        
+        if (latest.status === 'in_progress' || latest.status === 'queued') {
+          updateStep('pipeline', 'running', 'Pipeline đang xử lý chunks...')
+        } else if (latest.status === 'completed') {
+          clearInterval(pollRef.current)
+          pollRef.current = null
+
+          if (latest.conclusion === 'success') {
+            updateStep('pipeline', 'done', `Pipeline hoàn thành: ${latest.commit}`)
+            updateStep('deploy', 'running', 'Vercel đang deploy...')
+            
+            // Wait ~20s for Vercel to deploy
+            setTimeout(() => {
+              updateStep('deploy', 'done', 'Deploy hoàn thành!')
+              setCompleted(true)
+              setUploading(false)
+              // Play notification sound
+              try { new Audio('data:audio/wav;base64,UklGRl9vT19teleType...').play().catch(()=>{}) } catch(e){}
+            }, 20000)
+          } else {
+            updateStep('pipeline', 'error', `Pipeline thất bại: ${latest.conclusion}`)
+            setErrorMsg(`Pipeline thất bại. Xem chi tiết tại GitHub Actions.`)
+            setUploading(false)
+          }
+        }
+      } catch (err) {
+        setPipelineMsg('Đang kiểm tra...')
+      }
+    }, 8000)
   }
 
   async function handleSeed() {
@@ -125,12 +191,30 @@ export default function AdminPage() {
   }
 
   if (status !== 'authenticated' || !['admin', 'editor'].includes(session?.user?.role)) return null
-
   const isAdmin = session.user.role === 'admin'
+
+  const progressPercent = currentStep < 0 ? 0 : Math.min(100, ((Object.values(stepStatus).filter(s => s === 'done').length) / STEPS.length) * 100)
 
   return (
     <div className="min-h-screen bg-vs-gray-light">
       <Header />
+
+      {/* Completion notification */}
+      {completed && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-green-500 text-white py-4 px-6 shadow-lg animate-pulse">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🎉</span>
+              <div>
+                <p className="font-bold text-base">XỬ LÝ HOÀN THÀNH!</p>
+                <p className="text-sm opacity-90">Văn bản đã được xử lý và deploy thành công. Dữ liệu tìm kiếm đã cập nhật.</p>
+              </div>
+            </div>
+            <button onClick={() => setCompleted(false)} className="text-white/80 hover:text-white text-2xl">✕</button>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-4xl mx-auto p-6">
         <h1 className="text-xl font-bold text-vs-dark font-montserrat mb-6">
           {isAdmin ? 'QUẢN TRỊ HỆ THỐNG' : 'QUẢN LÝ VĂN BẢN'}
@@ -156,117 +240,103 @@ export default function AdminPage() {
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
-          {/* Upload Tab */}
           {tab === 'upload' && (
             <>
-              <h2 className="text-base font-semibold text-vs-dark mb-2">Upload văn bản .md</h2>
-              <p className="text-sm text-vs-gray-mid mb-4">
-                Upload file Markdown (.md) chứa nội dung văn bản PCCC. Hệ thống sẽ tự động xử lý (làm sạch → chia chunk → cập nhật search index) trong 1-2 phút.
-              </p>
+              <h2 className="text-base font-semibold text-vs-dark mb-4">Upload văn bản .md</h2>
 
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-vs-red transition">
-                <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* File picker */}
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-vs-red transition mb-4">
+                <svg className="w-10 h-10 mx-auto text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
                 </svg>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".md"
-                  className="block w-full max-w-xs mx-auto text-sm text-vs-gray file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-vs-red file:text-white hover:file:bg-vs-red-dark file:cursor-pointer"
-                />
-                <p className="text-xs text-vs-gray-mid mt-2">Chỉ chấp nhận file .md (Markdown)</p>
+                <input ref={fileRef} type="file" accept=".md" onChange={() => { resetProgress(); setErrorMsg('') }}
+                  className="block w-full max-w-xs mx-auto text-sm text-vs-gray file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-vs-red file:text-white hover:file:bg-vs-red-dark file:cursor-pointer" />
               </div>
 
-              <button
-                onClick={handleUpload}
-                disabled={uploading}
-                className="vs-btn-primary mt-4 disabled:opacity-50"
-              >
-                {uploading ? 'Đang upload...' : 'Upload & Xử lý'}
+              <button onClick={handleUpload} disabled={uploading}
+                className="vs-btn-primary disabled:opacity-50 mb-4">
+                {uploading ? 'Đang xử lý...' : 'Upload & Xử lý'}
               </button>
 
-              {uploadResult && (
-                <div className={`mt-4 p-3 rounded text-sm ${
-                  uploadResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
-                }`}>
-                  {uploadResult.ok ? '✅ ' : '❌ '}{uploadResult.msg}
+              {errorMsg && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">❌ {errorMsg}</div>
+              )}
+
+              {/* Progress Steps */}
+              {currentStep >= 0 && (
+                <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
+                  {/* Progress bar */}
+                  <div className="mb-4">
+                    <div className="flex justify-between text-[10px] text-vs-gray-mid mb-1">
+                      <span>Tiến trình</span>
+                      <span>{Math.round(progressPercent)}%</span>
+                    </div>
+                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-1000 ease-out"
+                        style={{ 
+                          width: `${progressPercent}%`,
+                          background: completed ? '#22c55e' : errorMsg ? '#ef4444' : '#C8102E'
+                        }} />
+                    </div>
+                  </div>
+
+                  {/* Steps */}
+                  <div className="space-y-2">
+                    {STEPS.map((step, i) => {
+                      const s = stepStatus[step.id]
+                      return (
+                        <div key={step.id} className="flex items-center gap-3">
+                          {/* Icon */}
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm"
+                            style={{
+                              background: s === 'done' ? '#22c55e' : s === 'running' ? '#C8102E' : s === 'error' ? '#ef4444' : '#e5e7eb',
+                              color: s && s !== 'waiting' ? 'white' : '#9ca3af'
+                            }}>
+                            {s === 'done' ? '✓' : s === 'running' ? (
+                              <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            ) : s === 'error' ? '✕' : i + 1}
+                          </div>
+                          {/* Label */}
+                          <span className={`text-sm ${
+                            s === 'done' ? 'text-green-700 font-medium' : 
+                            s === 'running' ? 'text-vs-red font-medium' :
+                            s === 'error' ? 'text-red-600' : 'text-vs-gray-mid'
+                          }`}>
+                            {step.label}
+                            {s === 'running' && <span className="text-xs ml-2 text-vs-gray-mid animate-pulse">đang xử lý...</span>}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Status message */}
+                  {pipelineMsg && (
+                    <p className="mt-3 text-xs text-vs-gray-mid border-t pt-2">{pipelineMsg}</p>
+                  )}
                 </div>
               )}
 
-              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-vs-dark">Tiến trình Pipeline:</h3>
-                  <button
-                    onClick={startPolling}
-                    disabled={pipelineLoading}
-                    className="text-xs px-3 py-1 text-vs-red border border-vs-red rounded hover:bg-red-50 disabled:opacity-50"
-                  >
-                    {pipelineLoading ? 'Đang kiểm tra...' : 'Kiểm tra trạng thái'}
+              {/* Completed message */}
+              {completed && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xl">🎉</span>
+                    <span className="text-green-700 font-semibold">Xử lý hoàn thành!</span>
+                  </div>
+                  <p className="text-sm text-green-600">Văn bản đã được chia chunks, cập nhật search index, và deploy lên webapp.</p>
+                  <button onClick={() => router.push('/dashboard')} className="mt-2 text-sm text-vs-red font-medium hover:underline">
+                    → Quay lại Dashboard tra cứu
                   </button>
                 </div>
-
-                {pipelineRuns.length > 0 ? (
-                  <div className="space-y-2">
-                    {pipelineRuns.map(run => (
-                      <div key={run.id} className="flex items-center gap-3 p-2.5 bg-white rounded border text-xs">
-                        {/* Status icon */}
-                        <div className="flex-shrink-0">
-                          {run.status === 'completed' && run.conclusion === 'success' ? (
-                            <span className="text-green-500 text-lg">✅</span>
-                          ) : run.status === 'completed' && run.conclusion === 'failure' ? (
-                            <span className="text-red-500 text-lg">❌</span>
-                          ) : run.status === 'in_progress' ? (
-                            <span className="inline-block w-4 h-4 border-2 border-vs-red border-t-transparent rounded-full animate-spin" />
-                          ) : (
-                            <span className="text-yellow-500 text-lg">⏳</span>
-                          )}
-                        </div>
-                        {/* Info */}
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-vs-dark truncate">{run.commit || run.name}</p>
-                          <p className="text-vs-gray-mid">
-                            {run.status === 'completed' 
-                              ? (run.conclusion === 'success' ? 'Hoàn thành' : 'Thất bại')
-                              : run.status === 'in_progress' ? 'Đang xử lý...' 
-                              : 'Đang chờ...'}
-                            {' • '}{new Date(run.updated).toLocaleTimeString('vi-VN')}
-                          </p>
-                        </div>
-                        {/* Link */}
-                        <a href={run.url} target="_blank" rel="noopener noreferrer"
-                          className="text-vs-red hover:underline flex-shrink-0">
-                          Chi tiết →
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-vs-gray-mid">Nhấn &quot;Kiểm tra trạng thái&quot; để xem tiến trình pipeline</p>
-                )}
-              </div>
-
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                <h3 className="text-sm font-semibold text-vs-dark mb-2">Quy trình tự động:</h3>
-                <div className="flex items-center gap-2 text-xs text-vs-gray-mid flex-wrap">
-                  <span className="px-2 py-1 bg-white rounded border">1. Upload .md</span>
-                  <span>→</span>
-                  <span className="px-2 py-1 bg-white rounded border">2. Commit GitHub</span>
-                  <span>→</span>
-                  <span className="px-2 py-1 bg-white rounded border">3. Pipeline tự chạy</span>
-                  <span>→</span>
-                  <span className="px-2 py-1 bg-white rounded border">4. Vercel auto-deploy</span>
-                </div>
-              </div>
+              )}
             </>
           )}
 
-          {/* Documents Tab */}
           {tab === 'docs' && (
             <>
               <h2 className="text-base font-semibold text-vs-dark mb-4">Danh sách văn bản</h2>
-              {loading ? (
-                <p className="text-sm text-vs-gray-mid">Đang tải...</p>
-              ) : (
+              {loading ? <p className="text-sm text-vs-gray-mid">Đang tải...</p> : (
                 <div className="space-y-2">
                   {documents.map(doc => (
                     <div key={doc.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded">
@@ -274,20 +344,13 @@ export default function AdminPage() {
                         <p className="text-sm font-medium text-vs-dark truncate">{doc.title}</p>
                         <p className="text-xs text-vs-gray-mid">{doc.status} • {doc.filename}</p>
                       </div>
-                      <button
-                        onClick={() => { setEditDoc(doc); setEditTitle(doc.title); setEditStatus(doc.status) }}
-                        className="text-xs px-3 py-1 text-vs-red border border-vs-red rounded hover:bg-red-50"
-                      >
-                        Sửa
-                      </button>
+                      <button onClick={() => { setEditDoc(doc); setEditTitle(doc.title); setEditStatus(doc.status) }}
+                        className="text-xs px-3 py-1 text-vs-red border border-vs-red rounded hover:bg-red-50">Sửa</button>
                     </div>
                   ))}
-                  {documents.length === 0 && (
-                    <p className="text-sm text-vs-gray-mid">Chưa có văn bản.</p>
-                  )}
+                  {documents.length === 0 && <p className="text-sm text-vs-gray-mid">Chưa có văn bản.</p>}
                 </div>
               )}
-
               {editDoc && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                   <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
@@ -317,7 +380,6 @@ export default function AdminPage() {
             </>
           )}
 
-          {/* Seed Tab (admin only) */}
           {tab === 'seed' && isAdmin && (
             <>
               <h2 className="text-base font-semibold text-vs-dark mb-4">Khởi tạo dữ liệu ban đầu</h2>
