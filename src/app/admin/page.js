@@ -3,6 +3,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Header from '@/components/Header'
+import ConflictsTab from '@/components/ConflictsTab'
 
 const STEPS = [
   { id: 'upload', label: 'Upload file' },
@@ -224,6 +225,7 @@ export default function AdminPage() {
         <div className="flex gap-1 mb-4">
           {[
             { key: 'upload', label: 'Upload văn bản' },
+            { key: 'conflicts', label: '⚠️ Rà soát xung đột' },
             { key: 'docs', label: 'Danh sách văn bản' },
             ...(isAdmin ? [{ key: 'seed', label: 'Khởi tạo dữ liệu' }] : [])
           ].map(t => (
@@ -332,6 +334,8 @@ export default function AdminPage() {
               )}
             </>
           )}
+
+          {tab === 'conflicts' && <ConflictsTab />}
 
           {tab === 'docs' && (
             <>

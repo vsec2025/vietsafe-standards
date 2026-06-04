@@ -119,15 +119,16 @@ export async function loadSearchData() {
 }
 
 export function searchDocuments(query, limit = 10) {
-  return loadSearchData().then(({ chunks, index }) => {
+  return loadSearchData().then(async ({ chunks, index }) => {
     if (!index) return []
-    return search(query, chunks, index, limit)
+    const results = search(query, chunks, index, limit)
+    return await markSupersededResults(results)
   })
 }
 
 // Exact phrase search - finds chunks containing the exact phrase
 export function exactSearch(phrase, limit = 20) {
-  return loadSearchData().then(({ chunks }) => {
+  return loadSearchData().then(async ({ chunks }) => {
     if (!chunks || !chunks.length) return []
     const lower = phrase.toLowerCase()
     const results = []
@@ -136,7 +137,6 @@ export function exactSearch(phrase, limit = 20) {
       const content = (chunk.content || chunk.text || '').toLowerCase()
       const idx = content.indexOf(lower)
       if (idx !== -1) {
-        // Score based on how early the match appears and frequency
         const freq = (content.match(new RegExp(lower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')) || []).length
         results.push({
           ...chunk,
@@ -146,8 +146,31 @@ export function exactSearch(phrase, limit = 20) {
       }
     })
     
-    return results
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit)
+    const sorted = results.sort((a, b) => b.score - a.score).slice(0, limit)
+    return await markSupersededResults(sorted)
   })
+}
+
+// Check Redis for superseded chunk status and mark results
+async function markSupersededResults(results) {
+  try {
+    const { getRedis } = require('./redis')
+    const r = getRedis()
+    if (!r) return results
+    
+    const statusData = await r.get('chunks:status')
+    if (!statusData) return results
+    
+    const chunkStatus = typeof statusData === 'string' ? JSON.parse(statusData) : statusData
+    
+    return results.map(r => {
+      const st = chunkStatus[r.id]
+      if (st) {
+        return { ...r, _superseded: true, _supersededInfo: st }
+      }
+      return r
+    })
+  } catch (e) {
+    return results
+  }
 }

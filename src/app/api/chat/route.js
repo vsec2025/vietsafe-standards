@@ -23,7 +23,9 @@ export async function POST(request) {
 
     // RAG: search relevant chunks
     const searchResults = await searchDocuments(message, 5)
-    const context = searchResults
+    // Filter out superseded chunks for AI context
+    const activeResults = searchResults.filter(r => !r._superseded)
+    const context = activeResults
       .map(r => {
         const doc = r.loai === 'LUAT' ? (r.van_ban || 'Luật PCCC') 
           : r.loai === 'QCVN' ? 'QCVN 06:2022/BXD' 

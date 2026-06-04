@@ -159,6 +159,11 @@ export default function SearchPanel() {
                   )}
                 </div>
                 {/* Content preview */}
+                {r._superseded && (
+                  <div className="mb-1 px-2 py-1 bg-yellow-50 border border-yellow-300 rounded text-[10px] text-yellow-700">
+                    ⚠️ <b>Đã {r._supersededInfo?.status === 'superseded' ? 'bị thay thế' : 'sửa đổi'}</b> bởi: {r._supersededInfo?.superseded_by}
+                  </div>
+                )}
                 <p
                   className="text-[11px] text-vs-gray leading-relaxed line-clamp-3"
                   dangerouslySetInnerHTML={{
