@@ -30,4 +30,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add public/data/chunks.jsonl data/
           git diff --staged --quiet || git commit -m "auto: pipeline - $(date +%Y%m%d) - $(wc -l < public/data/chunks.jsonl) chunks"
-          git push
+          git pull --rebase origin main || true
+          git push origin main
