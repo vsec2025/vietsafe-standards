@@ -350,6 +350,16 @@ export default function AdminPage() {
                       </div>
                       <button onClick={() => { setEditDoc(doc); setEditTitle(doc.title); setEditStatus(doc.status) }}
                         className="text-xs px-3 py-1 text-vs-red border border-vs-red rounded hover:bg-red-50">Sửa</button>
+                      <button onClick={async () => {
+                        if (!confirm(`Xóa "${doc.title}"? Sẽ xóa cả file trên GitHub và chunks.`)) return
+                        const res = await fetch('/api/documents/delete', {
+                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ docId: doc.id, filename: doc.filename })
+                        })
+                        const data = await res.json()
+                        if (data.success) { alert(data.message); fetchDocs() }
+                        else alert('Lỗi: ' + data.error)
+                      }} className="text-xs px-3 py-1 text-red-600 border border-red-300 rounded hover:bg-red-50">Xóa</button>
                     </div>
                   ))}
                   {documents.length === 0 && <p className="text-sm text-vs-gray-mid">Chưa có văn bản.</p>}

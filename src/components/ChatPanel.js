@@ -1,11 +1,15 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import { useSession } from 'next-auth/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import UsageTracker from './UsageTracker'
 
 export default function ChatPanel() {
+  const { data: session } = useSession()
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
+  const [questionCount, setQuestionCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const endRef = useRef(null)
   const inputRef = useRef(null)
@@ -23,6 +27,7 @@ export default function ChatPanel() {
     setMessages(prev => [...prev, userMsg])
     setInput('')
     setLoading(true)
+    setQuestionCount(prev => prev + 1)
 
     try {
       const res = await fetch('/api/chat', {
@@ -183,6 +188,9 @@ export default function ChatPanel() {
         )}
         <div ref={endRef} />
       </div>
+
+      {/* Usage tracker for all users */}
+      <UsageTracker questionCount={questionCount} />
 
       {/* Input */}
       <div className="p-3 border-t border-gray-200 bg-gray-50">
