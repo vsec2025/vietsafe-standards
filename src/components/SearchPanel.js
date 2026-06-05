@@ -34,6 +34,44 @@ export default function SearchPanel() {
   const [expanded, setExpanded] = useState({}) // {index: true/false}
   const inputRef = useRef(null)
 
+  // Highlight keywords in text
+  function getHighlightWords() {
+    const q = query.replace(/^"|"$/g, '').trim()
+    return q.toLowerCase().split(/\s+/).filter(w => w.length > 1)
+  }
+
+  function highlightHtml(text) {
+    const words = getHighlightWords()
+    if (!words.length) return text
+    const regex = new RegExp(`(${words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi')
+    return text.replace(regex, '<mark class="bg-yellow-200 text-vs-dark rounded px-0.5">$1</mark>')
+  }
+
+  // Custom ReactMarkdown components with highlighting
+  function withHighlight(Component, className) {
+    return ({ children, ...props }) => {
+      if (typeof children === 'string') {
+        return <Component {...props} className={className} dangerouslySetInnerHTML={{ __html: highlightHtml(children) }} />
+      }
+      // Recursively handle arrays of children
+      const highlighted = Array.isArray(children) ? children.map((child, i) => {
+        if (typeof child === 'string') {
+          return <span key={i} dangerouslySetInnerHTML={{ __html: highlightHtml(child) }} />
+        }
+        return child
+      }) : children
+      return <Component {...props} className={className}>{highlighted}</Component>
+    }
+  }
+
+  const highlightMdComponents = {
+    ...mdComponents,
+    p: withHighlight('p', 'text-[11px] leading-relaxed mb-1'),
+    li: withHighlight('li', 'text-[11px] leading-relaxed'),
+    td: withHighlight('td', 'border border-gray-300 px-2 py-1'),
+    th: withHighlight('th', 'border border-gray-300 px-2 py-1 text-left font-semibold'),
+  }
+
   async function handleSearch(e) {
     e?.preventDefault()
     if (!query.trim()) return
@@ -174,7 +212,8 @@ export default function SearchPanel() {
 
                     {/* Preview (when collapsed) */}
                     {!isOpen && (
-                      <p className="text-[11px] text-vs-gray leading-relaxed line-clamp-2">{getPreview(content)}</p>
+                      <p className="text-[11px] text-vs-gray leading-relaxed line-clamp-2"
+                        dangerouslySetInnerHTML={{ __html: highlightHtml(getPreview(content)) }} />
                     )}
                   </button>
 
@@ -182,7 +221,7 @@ export default function SearchPanel() {
                   {isOpen && (
                     <div className="px-3 pb-3 border-l-2 border-vs-red ml-3">
                       <div className="bg-white rounded p-3 text-vs-gray">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={highlightMdComponents}>
                           {content}
                         </ReactMarkdown>
                       </div>
