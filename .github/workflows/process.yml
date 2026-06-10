@@ -1,6 +1,7 @@
 name: Process PCCC Standards
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - 'raw/**/*.md'
