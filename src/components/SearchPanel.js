@@ -35,15 +35,54 @@ export default function SearchPanel() {
   const inputRef = useRef(null)
 
   // Highlight keywords in text
+  function isExactQuery() {
+    return /^".*"$/.test(query.trim())
+  }
+
+  // Exact phrase (without surrounding quotes), or null when not in exact mode
+  function getExactPhrase() {
+    if (!isExactQuery()) return null
+    const p = query.trim().replace(/^"|"$/g, '').trim()
+    return p.length > 1 ? p : null
+  }
+
+  // Individual words used for related-term highlighting
   function getHighlightWords() {
     const q = query.replace(/^"|"$/g, '').trim()
     return q.toLowerCase().split(/\s+/).filter(w => w.length > 1)
   }
 
+  function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
   function highlightHtml(text) {
+    if (!text) return text
+    const phrase = getExactPhrase()
+    if (phrase) {
+      // EXACT MODE: full phrase -> solid yellow; related words -> lighter yellow.
+      const PH_OPEN = '\u0001'
+      const PH_CLOSE = '\u0002'
+      const phraseRe = new RegExp('(' + escapeRegex(phrase) + ')', 'gi')
+      // 1) protect exact phrase matches with placeholders
+      let out = text.replace(phraseRe, PH_OPEN + '$1' + PH_CLOSE)
+      // 2) highlight related individual words (light yellow) outside the protected phrase
+      const words = getHighlightWords()
+      if (words.length) {
+        const wordRe = new RegExp('(' + words.map(escapeRegex).join('|') + ')', 'gi')
+        out = out.replace(wordRe, function(m) {
+          return '<mark class="bg-yellow-100 text-vs-dark rounded px-0.5">' + m + '</mark>'
+        })
+      }
+      // 3) restore exact phrase with solid-yellow highlight
+      out = out.split(PH_OPEN).join('<mark class="bg-yellow-300 text-vs-dark rounded px-0.5 font-medium">')
+                .split(PH_CLOSE).join('</mark>')
+      return out
+    }
+    // FUZZY MODE: highlight each word in solid yellow (original behavior)
     const words = getHighlightWords()
     if (!words.length) return text
-    const regex = new RegExp(`(${words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi')
+    const regex = new RegExp('(' + words.map(escapeRegex).join('|') + ')', 'gi')
     return text.replace(regex, '<mark class="bg-yellow-200 text-vs-dark rounded px-0.5">$1</mark>')
   }
 
