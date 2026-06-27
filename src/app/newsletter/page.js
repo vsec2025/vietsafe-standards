@@ -40,7 +40,7 @@ export default function NewsletterPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
-    if (status === 'authenticated' && !['admin', 'engineer'].includes(session?.user?.role)) router.push('/dashboard')
+    if (status === 'authenticated' && !['admin', 'editor'].includes(session?.user?.role)) router.push('/dashboard')
   }, [status, session, router])
 
   async function generate() {
@@ -67,7 +67,7 @@ export default function NewsletterPage() {
   }
 
   if (status === 'loading' || !session) return null
-  if (!['admin', 'engineer'].includes(session?.user?.role)) return null
+  if (!['admin', 'editor'].includes(session?.user?.role)) return null
 
   const stats = data?.stats
 

@@ -23,7 +23,7 @@ export async function PATCH(request) {
   if (!email) return NextResponse.json({ error: 'Thiếu email' }, { status: 400 })
 
   if (role !== undefined) {
-    if (!['viewer', 'engineer', 'admin'].includes(role))
+    if (!['viewer', 'editor', 'admin'].includes(role))
       return NextResponse.json({ error: 'Role không hợp lệ' }, { status: 400 })
     await updateUserRole(email, role)
   }

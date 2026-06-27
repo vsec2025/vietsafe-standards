@@ -5,8 +5,8 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Header from '@/components/Header'
 import ConflictsTab from '@/components/ConflictsTab'
 
-const ROLE_LABELS = { viewer: 'Xem', engineer: 'Kỹ sư', admin: 'Admin' }
-const ROLE_COLORS = { viewer: 'bg-gray-100 text-gray-600', engineer: 'bg-blue-50 text-blue-700', admin: 'bg-red-50 text-vs-red' }
+const ROLE_LABELS = { viewer: 'Người xem', editor: 'Biên tập', admin: 'Admin' }
+const ROLE_COLORS = { viewer: 'bg-gray-100 text-gray-600', editor: 'bg-blue-50 text-blue-700', admin: 'bg-red-50 text-vs-red' }
 
 function UsersTab() {
   const [users, setUsers] = useState([])

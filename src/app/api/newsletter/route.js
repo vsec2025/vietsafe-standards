@@ -24,7 +24,7 @@ export async function GET(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user) return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 })
-    if (!['admin', 'engineer'].includes(session.user.role)) {
+    if (!['admin', 'editor'].includes(session.user.role)) {
       return NextResponse.json({ error: 'Không có quyền' }, { status: 403 })
     }
 

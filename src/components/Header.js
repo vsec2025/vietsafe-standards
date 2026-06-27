@@ -39,7 +39,7 @@ export default function Header() {
             className="text-xs px-3 py-1.5 text-vs-gray-mid hover:text-vs-red hover:bg-red-50 rounded transition">
             📋 Kiểm tra dự án
           </button>
-          {['admin', 'engineer'].includes(session?.user?.role) && (
+          {['admin', 'editor'].includes(session?.user?.role) && (
             <button onClick={() => router.push('/newsletter')}
               className="text-xs px-3 py-1.5 text-vs-gray-mid hover:text-vs-red hover:bg-red-50 rounded transition">
               📰 Bản tin
