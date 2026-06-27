@@ -29,6 +29,24 @@ export default function Header() {
           </div>
         </div>
 
+        {/* Nav links */}
+        <div className="hidden sm:flex items-center gap-1">
+          <button onClick={() => router.push('/dashboard')}
+            className="text-xs px-3 py-1.5 text-vs-gray-mid hover:text-vs-red hover:bg-red-50 rounded transition">
+            💬 Hỏi đáp
+          </button>
+          <button onClick={() => router.push('/project-check')}
+            className="text-xs px-3 py-1.5 text-vs-gray-mid hover:text-vs-red hover:bg-red-50 rounded transition">
+            📋 Kiểm tra dự án
+          </button>
+          {['admin', 'engineer'].includes(session?.user?.role) && (
+            <button onClick={() => router.push('/newsletter')}
+              className="text-xs px-3 py-1.5 text-vs-gray-mid hover:text-vs-red hover:bg-red-50 rounded transition">
+              📰 Bản tin
+            </button>
+          )}
+        </div>
+
         {/* User info */}
         <div className="flex items-center gap-3">
           {['admin', 'editor'].includes(session?.user?.role) && (
