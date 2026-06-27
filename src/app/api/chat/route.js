@@ -104,20 +104,21 @@ export async function POST(request) {
       score: r.score,
     }))
 
-    logQuery({
-      user_email: session.user.email,
-      query_text: message,
-      mode,
-      answer_text: reply,
-      citations,
-      has_basis,
-      model_used: model,
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
-      latency_ms,
-    }).catch(() => {})
-
-    incrementTokenUsage(session.user.email, inputTokens, outputTokens).catch(() => {})
+    const [logId] = await Promise.all([
+      logQuery({
+        user_email: session.user.email,
+        query_text: message,
+        mode,
+        answer_text: reply,
+        citations,
+        has_basis,
+        model_used: model,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        latency_ms,
+      }).catch(() => null),
+      incrementTokenUsage(session.user.email, inputTokens, outputTokens).catch(() => {}),
+    ])
 
     return NextResponse.json({
       reply,
@@ -125,6 +126,7 @@ export async function POST(request) {
       model_used: model,
       sources: citations,
       token_usage: { input: inputTokens, output: outputTokens },
+      log_id: logId,
     })
   } catch (err) {
     console.error('Chat error:', err)
