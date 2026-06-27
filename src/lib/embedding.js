@@ -1,15 +1,16 @@
-// Google text-embedding-005 — 768 dims, hỗ trợ tiếng Việt và Anh
+// Google gemini-embedding-001 — 3072 dims, hỗ trợ tiếng Việt và Anh
+const MODEL = 'models/gemini-embedding-001'
 
 export async function embedText(text) {
   const apiKey = process.env.GOOGLE_API_KEY
   if (!apiKey || apiKey === 'placeholder') return null
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-005:embedContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/${MODEL}:embedContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'models/text-embedding-005', content: { parts: [{ text }] } }),
+      body: JSON.stringify({ model: MODEL, content: { parts: [{ text }] } }),
     }
   )
   if (!res.ok) {
@@ -24,21 +25,17 @@ export async function embedBatch(texts) {
   const apiKey = process.env.GOOGLE_API_KEY
   if (!apiKey || apiKey === 'placeholder') return null
 
-  // Google batchEmbedContents: tối đa 100 items
   const BATCH = 100
   const results = []
   for (let i = 0; i < texts.length; i += BATCH) {
     const batch = texts.slice(i, i + BATCH)
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-005:batchEmbedContents?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/${MODEL}:batchEmbedContents?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          requests: batch.map((text) => ({
-            model: 'models/text-embedding-005',
-            content: { parts: [{ text }] },
-          })),
+          requests: batch.map((text) => ({ model: MODEL, content: { parts: [{ text }] } })),
         }),
       }
     )
