@@ -5,6 +5,105 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Header from '@/components/Header'
 import ConflictsTab from '@/components/ConflictsTab'
 
+const ROLE_LABELS = { viewer: 'Xem', engineer: 'Kỹ sư', admin: 'Admin' }
+const ROLE_COLORS = { viewer: 'bg-gray-100 text-gray-600', engineer: 'bg-blue-50 text-blue-700', admin: 'bg-red-50 text-vs-red' }
+
+function UsersTab() {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState({})
+  const [quotaEdit, setQuotaEdit] = useState({})
+
+  useEffect(() => {
+    fetch('/api/admin/users').then(r => r.json()).then(d => {
+      setUsers(d.users || [])
+      setLoading(false)
+    })
+  }, [])
+
+  async function patch(email, payload) {
+    setSaving(prev => ({ ...prev, [email]: true }))
+    await fetch('/api/admin/users', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, ...payload }),
+    })
+    setSaving(prev => ({ ...prev, [email]: false }))
+    const res = await fetch('/api/admin/users')
+    const d = await res.json()
+    setUsers(d.users || [])
+  }
+
+  if (loading) return <p className="text-sm text-vs-gray-mid py-4">Đang tải...</p>
+  if (users.length === 0) return <p className="text-sm text-vs-gray-mid py-4">Chưa có người dùng nào đăng nhập.</p>
+
+  return (
+    <div>
+      <h2 className="text-base font-semibold text-vs-dark mb-4">Quản lý người dùng</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="border-b border-gray-200 text-vs-gray-mid text-left">
+              <th className="pb-2 pr-4 font-medium">Email</th>
+              <th className="pb-2 pr-4 font-medium">Tên</th>
+              <th className="pb-2 pr-4 font-medium">Role</th>
+              <th className="pb-2 pr-4 font-medium">Token dùng / hạn mức</th>
+              <th className="pb-2 font-medium">Quota</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {users.map(u => (
+              <tr key={u.email} className="hover:bg-gray-50">
+                <td className="py-2.5 pr-4 text-vs-dark font-medium">{u.email}</td>
+                <td className="py-2.5 pr-4 text-vs-gray">{u.full_name || '—'}</td>
+                <td className="py-2.5 pr-4">
+                  <select
+                    value={u.role}
+                    disabled={saving[u.email]}
+                    onChange={e => patch(u.email, { role: e.target.value })}
+                    className={`text-xs rounded px-2 py-1 border-0 font-medium cursor-pointer ${ROLE_COLORS[u.role] || 'bg-gray-100'}`}
+                  >
+                    {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </td>
+                <td className="py-2.5 pr-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-vs-red rounded-full"
+                        style={{ width: `${Math.min(100, (u.token_used / u.token_quota) * 100)}%` }} />
+                    </div>
+                    <span className="text-vs-gray-mid">
+                      {(u.token_used || 0).toLocaleString()} / {(u.token_quota || 50000).toLocaleString()}
+                    </span>
+                  </div>
+                </td>
+                <td className="py-2.5">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      value={quotaEdit[u.email] ?? u.token_quota ?? 50000}
+                      onChange={e => setQuotaEdit(prev => ({ ...prev, [u.email]: e.target.value }))}
+                      className="w-20 text-xs border border-gray-200 rounded px-1.5 py-0.5"
+                      min="0" step="10000"
+                    />
+                    <button
+                      onClick={() => patch(u.email, { token_quota: quotaEdit[u.email] ?? u.token_quota })}
+                      disabled={saving[u.email]}
+                      className="text-xs px-2 py-0.5 bg-vs-red text-white rounded hover:opacity-90 disabled:opacity-50"
+                    >
+                      {saving[u.email] ? '...' : 'Lưu'}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 const STEPS = [
   { id: 'upload', label: 'Upload file' },
   { id: 'commit', label: 'Commit lên GitHub' },
@@ -227,7 +326,10 @@ export default function AdminPage() {
             { key: 'upload', label: 'Upload văn bản' },
             { key: 'conflicts', label: '⚠️ Rà soát xung đột' },
             { key: 'docs', label: 'Danh sách văn bản' },
-            ...(isAdmin ? [{ key: 'seed', label: 'Khởi tạo dữ liệu' }] : [])
+            ...(isAdmin ? [
+              { key: 'users', label: '👥 Người dùng' },
+              { key: 'seed', label: 'Khởi tạo dữ liệu' },
+            ] : [])
           ].map(t => (
             <button
               key={t.key}
@@ -393,6 +495,8 @@ export default function AdminPage() {
               )}
             </>
           )}
+
+          {tab === 'users' && isAdmin && <UsersTab />}
 
           {tab === 'seed' && isAdmin && (
             <>

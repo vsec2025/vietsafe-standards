@@ -53,3 +53,26 @@ export async function updateFeedback(logId, feedback, note) {
   if (!sb) return
   await sb.from('query_logs').update({ feedback, feedback_note: note ?? null }).eq('id', logId)
 }
+
+// Danh sách tất cả user (admin)
+export async function listUsers() {
+  const sb = getSupabase()
+  if (!sb) return []
+  const { data, error } = await sb.from('user_profiles').select('*').order('created_at', { ascending: false })
+  if (error) console.error('listUsers error:', error.message)
+  return data ?? []
+}
+
+// Cập nhật role
+export async function updateUserRole(email, role) {
+  const sb = getSupabase()
+  if (!sb) return
+  await sb.from('user_profiles').update({ role, updated_at: new Date().toISOString() }).eq('email', email)
+}
+
+// Cập nhật token quota
+export async function updateUserQuota(email, quota) {
+  const sb = getSupabase()
+  if (!sb) return
+  await sb.from('user_profiles').update({ token_quota: quota, updated_at: new Date().toISOString() }).eq('email', email)
+}
