@@ -1,4 +1,4 @@
--- VSEC-AI Supabase Schema — Rev 0
+-- VSEC-AI Supabase Schema — Rev 1
 -- Chạy trong Supabase > SQL Editor
 
 -- ── USER PROFILES ─────────────────────────────────────────────────────────
@@ -6,7 +6,6 @@ create table if not exists user_profiles (
   id          bigserial primary key,
   email       text unique not null,
   full_name   text,
-  role        text default 'viewer' check (role in ('viewer', 'engineer', 'admin')),
   token_quota int default 50000,
   token_used  int default 0,
   created_at  timestamptz default now(),
@@ -39,14 +38,15 @@ alter table user_profiles enable row level security;
 alter table query_logs enable row level security;
 
 -- Service role key (dùng trong API routes) bypass RLS nên không cần policy thêm.
--- Nếu dùng anon key ở client, thêm policies phù hợp.
 
 -- ── FUNCTIONS ─────────────────────────────────────────────────────────────
 create or replace function increment_token_used(p_email text, p_tokens int)
 returns void language plpgsql as $$
 begin
-  update user_profiles
-  set token_used = token_used + p_tokens, updated_at = now()
-  where email = p_email;
+  insert into user_profiles (email, token_used, token_quota)
+  values (p_email, p_tokens, 50000)
+  on conflict (email) do update
+    set token_used = user_profiles.token_used + p_tokens,
+        updated_at = now();
 end;
 $$;

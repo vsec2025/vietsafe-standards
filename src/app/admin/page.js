@@ -13,13 +13,19 @@ function UsersTab() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState({})
   const [quotaEdit, setQuotaEdit] = useState({})
+  const [showAdd, setShowAdd] = useState(false)
+  const [newUser, setNewUser] = useState({ email: '', name: '', password: '', role: 'viewer' })
+  const [addError, setAddError] = useState('')
+  const [addLoading, setAddLoading] = useState(false)
 
-  useEffect(() => {
-    fetch('/api/admin/users').then(r => r.json()).then(d => {
-      setUsers(d.users || [])
-      setLoading(false)
-    })
-  }, [])
+  async function loadUsers() {
+    const res = await fetch('/api/admin/users')
+    const d = await res.json()
+    setUsers(d.users || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadUsers() }, [])
 
   async function patch(email, payload) {
     setSaving(prev => ({ ...prev, [email]: true }))
@@ -29,17 +35,72 @@ function UsersTab() {
       body: JSON.stringify({ email, ...payload }),
     })
     setSaving(prev => ({ ...prev, [email]: false }))
-    const res = await fetch('/api/admin/users')
+    loadUsers()
+  }
+
+  async function handleAddUser(e) {
+    e.preventDefault()
+    setAddError('')
+    if (!newUser.email || !newUser.password) return setAddError('Điền đủ email và mật khẩu')
+    setAddLoading(true)
+    const res = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newUser),
+    })
     const d = await res.json()
-    setUsers(d.users || [])
+    setAddLoading(false)
+    if (d.error) return setAddError(d.error)
+    setShowAdd(false)
+    setNewUser({ email: '', name: '', password: '', role: 'viewer' })
+    loadUsers()
   }
 
   if (loading) return <p className="text-sm text-vs-gray-mid py-4">Đang tải...</p>
-  if (users.length === 0) return <p className="text-sm text-vs-gray-mid py-4">Chưa có người dùng nào đăng nhập.</p>
 
   return (
     <div>
-      <h2 className="text-base font-semibold text-vs-dark mb-4">Quản lý người dùng</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-base font-semibold text-vs-dark">Quản lý người dùng</h2>
+        <button onClick={() => { setShowAdd(true); setAddError('') }}
+          className="text-xs px-3 py-1.5 bg-vs-red text-white rounded hover:opacity-90 transition">
+          + Thêm người dùng
+        </button>
+      </div>
+
+      {/* Add user modal */}
+      {showAdd && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-sm mx-4 shadow-xl">
+            <h3 className="text-sm font-semibold text-vs-dark mb-4">Thêm người dùng mới</h3>
+            <form onSubmit={handleAddUser} className="space-y-3">
+              <input type="email" placeholder="Email *" value={newUser.email}
+                onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))}
+                className="vs-input text-sm" required />
+              <input type="text" placeholder="Họ tên" value={newUser.name}
+                onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))}
+                className="vs-input text-sm" />
+              <input type="password" placeholder="Mật khẩu *" value={newUser.password}
+                onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))}
+                className="vs-input text-sm" required />
+              <select value={newUser.role} onChange={e => setNewUser(p => ({ ...p, role: e.target.value }))}
+                className="vs-input text-sm">
+                {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              {addError && <p className="text-xs text-red-600">❌ {addError}</p>}
+              <div className="flex gap-2 pt-1">
+                <button type="submit" disabled={addLoading} className="vs-btn-primary text-sm disabled:opacity-50">
+                  {addLoading ? 'Đang tạo...' : 'Tạo tài khoản'}
+                </button>
+                <button type="button" onClick={() => setShowAdd(false)}
+                  className="px-4 py-2 bg-gray-100 rounded text-sm text-vs-gray hover:bg-gray-200">Hủy</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {users.length === 0 && <p className="text-sm text-vs-gray-mid py-4">Chưa có người dùng nào.</p>}
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-collapse">
           <thead>
