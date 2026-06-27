@@ -1,8 +1,24 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { searchDocuments } from '@/lib/search'
-import { getChatHistory, saveChatMessage } from '@/lib/redis'
+import { hybridSearch } from '@/lib/hybrid-search'
+import { logQuery, getUserProfile, upsertUserProfile, incrementTokenUsage } from '@/lib/supabase'
+
+const MODEL_DEFAULT = process.env.VSEC_DEFAULT_MODEL ?? 'claude-haiku-4-5-20251001'
+const MODEL_COMPARE = process.env.VSEC_COMPARE_MODEL ?? 'claude-sonnet-4-6-20251101'
+
+const SYSTEM_BASE = `Bạn là trợ lý chuyên về tiêu chuẩn PCCC (phòng cháy chữa cháy) của Công ty VIETSAFE E&C.
+Trả lời bằng ngôn ngữ của câu hỏi. Dùng Markdown: bảng khi so sánh, heading cho các phần, bold từ khóa quan trọng.
+
+Quy tắc bắt buộc:
+1. Chỉ dùng thông tin từ NGỮ CẢNH được cung cấp. Không suy diễn ngoài phạm vi.
+2. Mỗi luận điểm phải kèm trích dẫn [TÊN VĂN BẢN, Điều/Mục X.X].
+3. Nếu không đủ thông tin, nói rõ: "Không tìm thấy quy định cụ thể trong corpus hiện có."
+4. Đặt dòng cuối: HAS_BASIS: true (nếu có ít nhất 1 trích dẫn cụ thể) hoặc HAS_BASIS: false.`
+
+const SYSTEM_COMPARE = `${SYSTEM_BASE}
+
+Chế độ đối chiếu Việt–Quốc tế: sau khi trình bày quy định Việt Nam, so sánh với tiêu chuẩn quốc tế (NFPA, ISO, EN) nếu có trong ngữ cảnh.`
 
 export async function POST(request) {
   try {
@@ -11,91 +27,104 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 })
     }
 
-    const { message, history } = await request.json()
-    if (!message || typeof message !== 'string') {
-      return NextResponse.json({ error: 'Tin nhắn không hợp lệ' }, { status: 400 })
-    }
-
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey || apiKey === 'placeholder') {
       return NextResponse.json({ error: 'Chưa cấu hình API key' }, { status: 500 })
     }
 
-    // RAG: search relevant chunks
-    const searchResults = await searchDocuments(message, 5)
-    // Filter out superseded chunks for AI context
-    const activeResults = searchResults.filter(r => !r._superseded)
-    const context = activeResults
-      .map(r => {
-        const doc = r.loai === 'LUAT' ? (r.van_ban || 'Luật PCCC') 
-          : r.loai === 'QCVN' ? 'QCVN 06:2022/BXD' 
-          : r.loai === 'TCVN' ? 'TCVN 7336:2021' : 'N/A'
-        const section = [r.phan, r.don_vi, r.tieu_de].filter(Boolean).join(' - ')
-        return `[${doc} | ${section}]\n${r.content || r.text || ''}`
+    const { message, history, mode = 'vn_only' } = await request.json()
+    if (!message?.trim()) {
+      return NextResponse.json({ error: 'Tin nhắn không hợp lệ' }, { status: 400 })
+    }
+
+    // Kiểm tra token quota (nếu Supabase được cấu hình)
+    const profile = await getUserProfile(session.user.email)
+    if (profile && profile.token_used >= profile.token_quota) {
+      return NextResponse.json(
+        { error: 'Đã đạt hạn mức token tháng này. Liên hệ admin để nâng hạn mức.' },
+        { status: 429 }
+      )
+    }
+    if (!profile) {
+      upsertUserProfile(session.user.email, session.user.name).catch(() => {})
+    }
+
+    const startTime = Date.now()
+    const topK = parseInt(process.env.VSEC_TOP_K ?? '6', 10)
+    const chunks = await hybridSearch(message, { topK, mode })
+    const activeChunks = chunks.filter((r) => !r._superseded)
+
+    const context = activeChunks
+      .map((r, i) => {
+        const docName =
+          r.loai === 'LUAT' ? (r.van_ban || 'Luật PCCC')
+          : r.loai === 'QCVN' ? (r.so_hieu || 'QCVN 06:2022/BXD')
+          : r.loai === 'TCVN' ? (r.so_hieu || 'TCVN')
+          : r.loai === 'NFPA' ? (r.so_hieu || 'NFPA')
+          : (r.van_ban || r.loai || 'N/A')
+        const section = [r.phan, r.don_vi, r.tieu_de].filter(Boolean).join(' — ')
+        return `[${i + 1}] ${docName} | ${section}\n${r.content || r.text || ''}`
       })
       .join('\n\n---\n\n')
 
-    const systemPrompt = `Bạn là trợ lý chuyên về tiêu chuẩn PCCC (phòng cháy chữa cháy) Việt Nam của Công ty VIETSAFE E&C.
-Trả lời bằng tiếng Việt, chính xác, trích dẫn điều khoản cụ thể.
-Sử dụng Markdown để format: dùng bảng khi so sánh dữ liệu, heading cho các phần, bold cho từ khóa quan trọng, bullet list cho liệt kê.
-Nếu không tìm thấy thông tin, nói rõ và gợi ý hướng tra cứu.
+    const model = mode === 'intl_compare' ? MODEL_COMPARE : MODEL_DEFAULT
+    const systemPrompt =
+      (mode === 'intl_compare' ? SYSTEM_COMPARE : SYSTEM_BASE) +
+      `\n\nNGỮ CẢNH:\n${context || '(Không tìm thấy văn bản liên quan)'}`
 
-NGỮ CẢNH TỪ CƠ SỞ DỮ LIỆU PCCC:
-${context || '(Không tìm thấy văn bản liên quan)'}`
+    const messages = [...(history || []).slice(-10), { role: 'user', content: message }]
 
-    const messages = [
-      ...(history || []).slice(-10),
-      { role: 'user', content: message }
-    ]
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: messages
-      })
+      body: JSON.stringify({ model, max_tokens: 1500, system: systemPrompt, messages }),
     })
 
-    if (!response.ok) {
-      const errData = await response.text()
-      console.error('Anthropic API error:', errData)
+    if (!aiRes.ok) {
+      console.error('Anthropic API error:', await aiRes.text())
       return NextResponse.json({ error: 'Lỗi gọi AI' }, { status: 502 })
     }
 
-    const data = await response.json()
-    const reply = data.content?.[0]?.text || 'Không có phản hồi'
+    const aiData = await aiRes.json()
+    const rawReply = aiData.content?.[0]?.text || ''
+    const has_basis = /HAS_BASIS:\s*true/i.test(rawReply)
+    const reply = rawReply.replace(/HAS_BASIS:\s*(true|false)/i, '').trim()
 
-    // Save chat history
-    const month = new Date().toISOString().slice(0, 7) // YYYY-MM
-    try {
-      const existing = await getChatHistory(session.user.email, month)
-      const updated = [
-        ...existing,
-        { role: 'user', content: message, timestamp: new Date().toISOString() },
-        { role: 'assistant', content: reply, timestamp: new Date().toISOString() }
-      ]
-      // Keep last 200 messages per month
-      await saveChatMessage(session.user.email, month, updated.slice(-200))
-    } catch (e) {
-      console.error('Chat history save error:', e)
-    }
+    const latency_ms = Date.now() - startTime
+    const inputTokens = aiData.usage?.input_tokens ?? 0
+    const outputTokens = aiData.usage?.output_tokens ?? 0
+
+    const citations = activeChunks.map((r) => ({
+      id: r.id,
+      label: [r.van_ban || r.loai, r.don_vi, r.tieu_de].filter(Boolean).join(' — '),
+      score: r.score,
+    }))
+
+    logQuery({
+      user_email: session.user.email,
+      query_text: message,
+      mode,
+      answer_text: reply,
+      citations,
+      has_basis,
+      model_used: model,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      latency_ms,
+    }).catch(() => {})
+
+    incrementTokenUsage(session.user.email, inputTokens, outputTokens).catch(() => {})
 
     return NextResponse.json({
       reply,
-      sources: searchResults.map(r => {
-        const doc = r.loai === 'LUAT' ? (r.van_ban || 'Luật PCCC')
-          : r.loai === 'QCVN' ? 'QCVN 06:2022/BXD'
-          : r.loai === 'TCVN' ? 'TCVN 7336:2021' : r.loai
-        const section = [r.don_vi, r.tieu_de].filter(Boolean).join(' — ')
-        return { label: `${doc} | ${section}` }
-      })
+      has_basis,
+      model_used: model,
+      sources: citations,
+      token_usage: { input: inputTokens, output: outputTokens },
     })
   } catch (err) {
     console.error('Chat error:', err)
