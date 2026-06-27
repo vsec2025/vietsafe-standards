@@ -5,6 +5,166 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Header from '@/components/Header'
 import ConflictsTab from '@/components/ConflictsTab'
 
+const ROLE_LABELS = { viewer: 'Người xem', editor: 'Biên tập', admin: 'Admin' }
+const ROLE_COLORS = { viewer: 'bg-gray-100 text-gray-600', editor: 'bg-blue-50 text-blue-700', admin: 'bg-red-50 text-vs-red' }
+
+function UsersTab() {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState({})
+  const [quotaEdit, setQuotaEdit] = useState({})
+  const [showAdd, setShowAdd] = useState(false)
+  const [newUser, setNewUser] = useState({ email: '', name: '', password: '', role: 'viewer' })
+  const [addError, setAddError] = useState('')
+  const [addLoading, setAddLoading] = useState(false)
+
+  async function loadUsers() {
+    const res = await fetch('/api/admin/users')
+    const d = await res.json()
+    setUsers(d.users || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadUsers() }, [])
+
+  async function patch(email, payload) {
+    setSaving(prev => ({ ...prev, [email]: true }))
+    await fetch('/api/admin/users', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, ...payload }),
+    })
+    setSaving(prev => ({ ...prev, [email]: false }))
+    loadUsers()
+  }
+
+  async function handleAddUser(e) {
+    e.preventDefault()
+    setAddError('')
+    if (!newUser.email || !newUser.password) return setAddError('Điền đủ email và mật khẩu')
+    setAddLoading(true)
+    const res = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newUser),
+    })
+    const d = await res.json()
+    setAddLoading(false)
+    if (d.error) return setAddError(d.error)
+    setShowAdd(false)
+    setNewUser({ email: '', name: '', password: '', role: 'viewer' })
+    loadUsers()
+  }
+
+  if (loading) return <p className="text-sm text-vs-gray-mid py-4">Đang tải...</p>
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-base font-semibold text-vs-dark">Quản lý người dùng</h2>
+        <button onClick={() => { setShowAdd(true); setAddError('') }}
+          className="text-xs px-3 py-1.5 bg-vs-red text-white rounded hover:opacity-90 transition">
+          + Thêm người dùng
+        </button>
+      </div>
+
+      {/* Add user modal */}
+      {showAdd && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-sm mx-4 shadow-xl">
+            <h3 className="text-sm font-semibold text-vs-dark mb-4">Thêm người dùng mới</h3>
+            <form onSubmit={handleAddUser} className="space-y-3">
+              <input type="email" placeholder="Email *" value={newUser.email}
+                onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))}
+                className="vs-input text-sm" required />
+              <input type="text" placeholder="Họ tên" value={newUser.name}
+                onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))}
+                className="vs-input text-sm" />
+              <input type="password" placeholder="Mật khẩu *" value={newUser.password}
+                onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))}
+                className="vs-input text-sm" required />
+              <select value={newUser.role} onChange={e => setNewUser(p => ({ ...p, role: e.target.value }))}
+                className="vs-input text-sm">
+                {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              {addError && <p className="text-xs text-red-600">❌ {addError}</p>}
+              <div className="flex gap-2 pt-1">
+                <button type="submit" disabled={addLoading} className="vs-btn-primary text-sm disabled:opacity-50">
+                  {addLoading ? 'Đang tạo...' : 'Tạo tài khoản'}
+                </button>
+                <button type="button" onClick={() => setShowAdd(false)}
+                  className="px-4 py-2 bg-gray-100 rounded text-sm text-vs-gray hover:bg-gray-200">Hủy</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {users.length === 0 && <p className="text-sm text-vs-gray-mid py-4">Chưa có người dùng nào.</p>}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="border-b border-gray-200 text-vs-gray-mid text-left">
+              <th className="pb-2 pr-4 font-medium">Email</th>
+              <th className="pb-2 pr-4 font-medium">Tên</th>
+              <th className="pb-2 pr-4 font-medium">Role</th>
+              <th className="pb-2 pr-4 font-medium">Token dùng / hạn mức</th>
+              <th className="pb-2 font-medium">Quota</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {users.map(u => (
+              <tr key={u.email} className="hover:bg-gray-50">
+                <td className="py-2.5 pr-4 text-vs-dark font-medium">{u.email}</td>
+                <td className="py-2.5 pr-4 text-vs-gray">{u.full_name || '—'}</td>
+                <td className="py-2.5 pr-4">
+                  <select
+                    value={u.role}
+                    disabled={saving[u.email]}
+                    onChange={e => patch(u.email, { role: e.target.value })}
+                    className={`text-xs rounded px-2 py-1 border-0 font-medium cursor-pointer ${ROLE_COLORS[u.role] || 'bg-gray-100'}`}
+                  >
+                    {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </td>
+                <td className="py-2.5 pr-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-vs-red rounded-full"
+                        style={{ width: `${Math.min(100, (u.token_used / u.token_quota) * 100)}%` }} />
+                    </div>
+                    <span className="text-vs-gray-mid">
+                      {(u.token_used || 0).toLocaleString()} / {(u.token_quota || 50000).toLocaleString()}
+                    </span>
+                  </div>
+                </td>
+                <td className="py-2.5">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      value={quotaEdit[u.email] ?? u.token_quota ?? 50000}
+                      onChange={e => setQuotaEdit(prev => ({ ...prev, [u.email]: e.target.value }))}
+                      className="w-20 text-xs border border-gray-200 rounded px-1.5 py-0.5"
+                      min="0" step="10000"
+                    />
+                    <button
+                      onClick={() => patch(u.email, { token_quota: quotaEdit[u.email] ?? u.token_quota })}
+                      disabled={saving[u.email]}
+                      className="text-xs px-2 py-0.5 bg-vs-red text-white rounded hover:opacity-90 disabled:opacity-50"
+                    >
+                      {saving[u.email] ? '...' : 'Lưu'}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 const STEPS = [
   { id: 'upload', label: 'Upload file' },
   { id: 'commit', label: 'Commit lên GitHub' },
@@ -227,7 +387,10 @@ export default function AdminPage() {
             { key: 'upload', label: 'Upload văn bản' },
             { key: 'conflicts', label: '⚠️ Rà soát xung đột' },
             { key: 'docs', label: 'Danh sách văn bản' },
-            ...(isAdmin ? [{ key: 'seed', label: 'Khởi tạo dữ liệu' }] : [])
+            ...(isAdmin ? [
+              { key: 'users', label: '👥 Người dùng' },
+              { key: 'seed', label: 'Khởi tạo dữ liệu' },
+            ] : [])
           ].map(t => (
             <button
               key={t.key}
@@ -393,6 +556,8 @@ export default function AdminPage() {
               )}
             </>
           )}
+
+          {tab === 'users' && isAdmin && <UsersTab />}
 
           {tab === 'seed' && isAdmin && (
             <>
