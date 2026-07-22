@@ -115,12 +115,13 @@ async function checkGoogleEmbedding() {
   if (!key || key === 'placeholder') return '⚠️  Chưa cấu hình'
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-005:embedContent?key=${key}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${key}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'models/text-embedding-005', content: { parts: [{ text: 'test' }] } }) }
+        body: JSON.stringify({ model: 'models/gemini-embedding-001', content: { parts: [{ text: 'test' }] } }) }
     )
     const d = await res.json()
-    return res.ok ? `✅  768 dims OK` : `❌  ${d.error?.message}`
+    const dims = d.embedding?.values?.length
+    return res.ok ? `✅  ${dims ?? 3072} dims OK` : `❌  ${d.error?.message}`
   } catch (e) { return `❌  ${e.message}` }
 }
 
@@ -165,7 +166,7 @@ async function main() {
 
   // 3. Summary
   console.log('\n📋 Các bước còn lại:')
-  if (vecStatus.startsWith('⚠️')) console.log('   - Tạo Upstash Vector index (dim=768, cosine) qua Vercel Marketplace')
+  if (vecStatus.startsWith('⚠️')) console.log('   - Tạo Upstash Vector index (dim=3072, cosine) qua Vercel Marketplace')
   if (embedStatus.startsWith('⚠️')) console.log('   - Thêm GOOGLE_API_KEY vào .env.local')
   if (claudeStatus.startsWith('⚠️')) console.log('   - Thêm ANTHROPIC_API_KEY vào .env.local')
   console.log('   - Chạy schema/supabase.sql trong Supabase SQL Editor')
