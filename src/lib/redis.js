@@ -27,6 +27,12 @@ export async function setUser(email, userData) {
   await r.set(`user:${email}`, JSON.stringify(userData))
 }
 
+export async function deleteUser(email) {
+  const r = getRedis()
+  if (!r) return
+  await r.del(`user:${email}`)
+}
+
 export async function getAllUsers() {
   const r = getRedis()
   if (!r) return []
@@ -36,7 +42,8 @@ export async function getAllUsers() {
   for (const key of keys) {
     const data = await r.get(key)
     const user = typeof data === 'string' ? JSON.parse(data) : data
-    users.push({ ...user, password: undefined })
+    // hasPassword: có đăng nhập mật khẩu hay chỉ đăng nhập Google
+    users.push({ ...user, hasPassword: Boolean(user.password), password: undefined })
   }
   return users
 }

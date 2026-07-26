@@ -5,7 +5,7 @@ import { hybridSearch } from '@/lib/hybrid-search'
 import { logQuery, getUserProfile, upsertUserProfile, incrementTokenUsage } from '@/lib/supabase'
 
 const MODEL_DEFAULT = process.env.VSEC_DEFAULT_MODEL ?? 'claude-haiku-4-5-20251001'
-const MODEL_COMPARE = process.env.VSEC_COMPARE_MODEL ?? 'claude-sonnet-4-6-20251101'
+const MODEL_COMPARE = process.env.VSEC_COMPARE_MODEL ?? 'claude-sonnet-5'
 
 const SYSTEM_BASE = `Bạn là trợ lý chuyên về tiêu chuẩn PCCC (phòng cháy chữa cháy) của Công ty VIETSAFE E&C.
 Trả lời bằng ngôn ngữ của câu hỏi. Dùng Markdown: bảng khi so sánh, heading cho các phần, bold từ khóa quan trọng.

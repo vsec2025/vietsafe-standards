@@ -17,6 +17,7 @@ function UsersTab() {
   const [newUser, setNewUser] = useState({ email: '', name: '', password: '', role: 'viewer' })
   const [addError, setAddError] = useState('')
   const [addLoading, setAddLoading] = useState(false)
+  const [deleting, setDeleting] = useState({})
 
   async function loadUsers() {
     const res = await fetch('/api/admin/users')
@@ -38,10 +39,24 @@ function UsersTab() {
     loadUsers()
   }
 
+  async function handleDelete(email) {
+    if (!confirm(`Thu hồi quyền truy cập của "${email}"?\n\nEmail này sẽ không đăng nhập được nữa.`)) return
+    setDeleting(prev => ({ ...prev, [email]: true }))
+    const res = await fetch('/api/admin/users', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    const d = await res.json()
+    setDeleting(prev => ({ ...prev, [email]: false }))
+    if (d.error) return alert('Lỗi: ' + d.error)
+    loadUsers()
+  }
+
   async function handleAddUser(e) {
     e.preventDefault()
     setAddError('')
-    if (!newUser.email || !newUser.password) return setAddError('Điền đủ email và mật khẩu')
+    if (!newUser.email) return setAddError('Điền email')
     setAddLoading(true)
     const res = await fetch('/api/admin/users', {
       method: 'POST',
@@ -61,10 +76,15 @@ function UsersTab() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-semibold text-vs-dark">Quản lý người dùng</h2>
+        <div>
+          <h2 className="text-base font-semibold text-vs-dark">Danh sách email được phép truy cập</h2>
+          <p className="text-xs text-vs-gray-mid mt-0.5">
+            Chỉ những email dưới đây đăng nhập được (bằng Google hoặc mật khẩu).
+          </p>
+        </div>
         <button onClick={() => { setShowAdd(true); setAddError('') }}
-          className="text-xs px-3 py-1.5 bg-vs-red text-white rounded hover:opacity-90 transition">
-          + Thêm người dùng
+          className="text-xs px-3 py-1.5 bg-vs-red text-white rounded hover:opacity-90 transition whitespace-nowrap">
+          + Cấp quyền email
         </button>
       </div>
 
@@ -72,17 +92,26 @@ function UsersTab() {
       {showAdd && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-sm mx-4 shadow-xl">
-            <h3 className="text-sm font-semibold text-vs-dark mb-4">Thêm người dùng mới</h3>
+            <h3 className="text-sm font-semibold text-vs-dark mb-1">Cấp quyền truy cập</h3>
+            <p className="text-xs text-vs-gray-mid mb-4">
+              Nhập địa chỉ Gmail của người dùng. Sau khi được cấp quyền, họ đăng nhập
+              bằng nút &quot;Đăng nhập bằng Google&quot;.
+            </p>
             <form onSubmit={handleAddUser} className="space-y-3">
-              <input type="email" placeholder="Email *" value={newUser.email}
+              <input type="email" placeholder="Email Google *" value={newUser.email}
                 onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))}
                 className="vs-input text-sm" required />
               <input type="text" placeholder="Họ tên" value={newUser.name}
                 onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))}
                 className="vs-input text-sm" />
-              <input type="password" placeholder="Mật khẩu *" value={newUser.password}
-                onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))}
-                className="vs-input text-sm" required />
+              <div>
+                <input type="password" placeholder="Mật khẩu (tuỳ chọn)" value={newUser.password}
+                  onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))}
+                  className="vs-input text-sm" />
+                <p className="text-[11px] text-vs-gray-mid mt-1">
+                  Bỏ trống nếu chỉ đăng nhập bằng Google (khuyến nghị).
+                </p>
+              </div>
               <select value={newUser.role} onChange={e => setNewUser(p => ({ ...p, role: e.target.value }))}
                 className="vs-input text-sm">
                 {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -90,7 +119,7 @@ function UsersTab() {
               {addError && <p className="text-xs text-red-600">❌ {addError}</p>}
               <div className="flex gap-2 pt-1">
                 <button type="submit" disabled={addLoading} className="vs-btn-primary text-sm disabled:opacity-50">
-                  {addLoading ? 'Đang tạo...' : 'Tạo tài khoản'}
+                  {addLoading ? 'Đang lưu...' : 'Cấp quyền'}
                 </button>
                 <button type="button" onClick={() => setShowAdd(false)}
                   className="px-4 py-2 bg-gray-100 rounded text-sm text-vs-gray hover:bg-gray-200">Hủy</button>
@@ -100,7 +129,11 @@ function UsersTab() {
         </div>
       )}
 
-      {users.length === 0 && <p className="text-sm text-vs-gray-mid py-4">Chưa có người dùng nào.</p>}
+      {users.length === 0 && (
+        <p className="text-sm text-vs-gray-mid py-4">
+          Chưa cấp quyền cho email nào. Bấm &quot;+ Cấp quyền email&quot; để thêm.
+        </p>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-collapse">
           <thead>
@@ -108,8 +141,10 @@ function UsersTab() {
               <th className="pb-2 pr-4 font-medium">Email</th>
               <th className="pb-2 pr-4 font-medium">Tên</th>
               <th className="pb-2 pr-4 font-medium">Role</th>
+              <th className="pb-2 pr-4 font-medium">Đăng nhập</th>
               <th className="pb-2 pr-4 font-medium">Token dùng / hạn mức</th>
-              <th className="pb-2 font-medium">Quota</th>
+              <th className="pb-2 pr-4 font-medium">Quota</th>
+              <th className="pb-2 font-medium"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -128,6 +163,14 @@ function UsersTab() {
                   </select>
                 </td>
                 <td className="py-2.5 pr-4">
+                  <span className="inline-flex items-center gap-1 text-[11px] text-vs-gray-mid">
+                    <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded font-medium">Google</span>
+                    {u.has_password && (
+                      <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">+ mật khẩu</span>
+                    )}
+                  </span>
+                </td>
+                <td className="py-2.5 pr-4">
                   <div className="flex items-center gap-2">
                     <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                       <div className="h-full bg-vs-red rounded-full"
@@ -138,7 +181,7 @@ function UsersTab() {
                     </span>
                   </div>
                 </td>
-                <td className="py-2.5">
+                <td className="py-2.5 pr-4">
                   <div className="flex items-center gap-1">
                     <input
                       type="number"
@@ -155,6 +198,16 @@ function UsersTab() {
                       {saving[u.email] ? '...' : 'Lưu'}
                     </button>
                   </div>
+                </td>
+                <td className="py-2.5">
+                  <button
+                    onClick={() => handleDelete(u.email)}
+                    disabled={deleting[u.email]}
+                    title="Thu hồi quyền truy cập"
+                    className="text-xs px-2 py-0.5 text-red-600 border border-red-200 rounded hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {deleting[u.email] ? '...' : 'Thu hồi'}
+                  </button>
                 </td>
               </tr>
             ))}
@@ -178,7 +231,6 @@ export default function AdminPage() {
   const [documents, setDocuments] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('upload')
-  const [seedResult, setSeedResult] = useState(null)
 
   // Upload + progress
   const [uploading, setUploading] = useState(false)
@@ -324,20 +376,6 @@ export default function AdminPage() {
     }, 8000)
   }
 
-  async function handleSeed() {
-    setSeedResult('Đang khởi tạo...')
-    try {
-      const res = await fetch('/api/seed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ secret: 'vietsafe-dev-secret-key-2025' })
-      })
-      const data = await res.json()
-      setSeedResult(data.message || data.error || 'Done')
-      fetchDocs()
-    } catch (err) { setSeedResult('Lỗi: ' + err.message) }
-  }
-
   async function handleUpdateDoc() {
     if (!editDoc) return
     try {
@@ -389,7 +427,6 @@ export default function AdminPage() {
             { key: 'docs', label: 'Danh sách văn bản' },
             ...(isAdmin ? [
               { key: 'users', label: '👥 Người dùng' },
-              { key: 'seed', label: 'Khởi tạo dữ liệu' },
             ] : [])
           ].map(t => (
             <button
@@ -558,15 +595,6 @@ export default function AdminPage() {
           )}
 
           {tab === 'users' && isAdmin && <UsersTab />}
-
-          {tab === 'seed' && isAdmin && (
-            <>
-              <h2 className="text-base font-semibold text-vs-dark mb-4">Khởi tạo dữ liệu ban đầu</h2>
-              <p className="text-sm text-vs-gray mb-4">Tạo tài khoản và danh sách văn bản mặc định trong Redis.</p>
-              <button onClick={handleSeed} className="vs-btn-primary">Khởi tạo dữ liệu</button>
-              {seedResult && <p className="mt-3 text-sm text-vs-gray p-3 bg-gray-50 rounded">{seedResult}</p>}
-            </>
-          )}
         </div>
       </div>
     </div>

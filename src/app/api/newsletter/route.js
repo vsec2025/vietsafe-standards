@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getSupabase } from '@/lib/supabase'
 
-const MODEL = process.env.VSEC_COMPARE_MODEL ?? 'claude-sonnet-4-6-20251101'
+const MODEL = process.env.VSEC_COMPARE_MODEL ?? 'claude-sonnet-5'
 
 const SYSTEM_NEWSLETTER = `Bạn là biên tập viên bản tin kỹ thuật của Công ty VIETSAFE E&C — chuyên về PCCC.
 
