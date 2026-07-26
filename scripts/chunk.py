@@ -7,18 +7,21 @@ VIETSAFE E&C - Buoc 2: Chunk thong minh theo cau truc van ban
 """
 import re
 import json
+import unicodedata
 from pathlib import Path
-from clean import detect_type, extract_meta
+from clean import detect_type, extract_meta, parse_front_matter
 from chunk_nfpa import detect_foreign_standard, process_foreign_file
 
 MAX_TOKENS = 1500  # Gioi han token/chunk de toi uu RAG
 
-DIEU_RE = re.compile(r'^#{1,4}\s*(Dieu\s+(\d+)[\.:]?\s*(.*))', re.IGNORECASE)
+# Các mẫu phải khớp cả dạng CÓ DẤU (văn bản thật) lẫn KHÔNG DẤU.
+# Trước đây chỉ có dạng không dấu ("Dieu") nên toàn bộ Luật không sinh chunk nào.
+DIEU_RE = re.compile(r'^#{1,4}\s*((?:Điều|Dieu)\s+(\d+)[\.:]?\s*(.*))', re.IGNORECASE)
 MUC_SO_RE = re.compile(r'^#{1,4}\s*(\d+\.\d+(?:\.\d+)?)\s+(.*)')
-CHUONG_RE = re.compile(r'^#{1,3}\s*(Chuong\s+[IVXLCDM\d]+[\.:]?\s*(.*))', re.IGNORECASE)
-PHAN_RE = re.compile(r'^#{1,3}\s*(Phan\s+\d+|Phu luc\s+\w+)[\.:]?\s*(.*)', re.IGNORECASE)
+CHUONG_RE = re.compile(r'^#{1,3}\s*((?:Chương|Chuong)\s+[IVXLCDM\d]+[\.:]?\s*(.*))', re.IGNORECASE)
+PHAN_RE = re.compile(r'^#{1,3}\s*((?:Phần|Phan)\s+\d+|(?:Phụ lục|Phu luc)\s+\w+)[\.:]?\s*(.*)', re.IGNORECASE)
 KHOAN_RE = re.compile(r'^\d+\.\s')
-DIEM_RE = re.compile(r'^[a-zd]\)\s')
+DIEM_RE = re.compile(r'^[a-zđ]\)\s', re.IGNORECASE)
 
 
 def estimate_tokens(text: str) -> int:
@@ -52,8 +55,12 @@ def split_large_chunk(chunk: dict, max_tokens: int = MAX_TOKENS) -> list:
 
     for line in lines:
         line_tokens = estimate_tokens(line)
-        is_break = (KHOAN_RE.match(line) or DIEM_RE.match(line)) and current_tokens >= max_tokens // 2
-        if is_break:
+        # Ưu tiên cắt tại dấu khoản/điểm khi đã đủ dài
+        at_marker = (KHOAN_RE.match(line) or DIEM_RE.match(line)) and current_tokens >= max_tokens // 2
+        # Chặn cứng: đoạn không có dấu khoản/điểm (vd. bảng dài) vẫn phải cắt,
+        # nếu không sẽ sinh chunk khổng lồ chiếm trọn ngữ cảnh gửi cho AI.
+        over_cap = current_lines and (current_tokens + line_tokens) > max_tokens
+        if at_marker or over_cap:
             save_sub()
             current_lines = [line]
             current_tokens = line_tokens
@@ -85,8 +92,10 @@ def split_by_dieu(content: str, meta: dict) -> list:
                 "loai": meta["loai"],
                 "co_quan": meta["co_quan"],
                 "nam": meta["nam"],
+                "source": meta.get("source", ""),
+                "language": meta.get("language", "vi"),
                 "phan": current_chuong,
-                "don_vi": f"Dieu {current_dieu}",
+                "don_vi": f"Điều {current_dieu}",
                 "tieu_de": current_tieu_de,
                 "content": text,
                 "tokens": estimate_tokens(text)
@@ -131,6 +140,8 @@ def split_by_muc(content: str, meta: dict) -> list:
                 "loai": meta["loai"],
                 "co_quan": meta["co_quan"],
                 "nam": meta["nam"],
+                "source": meta.get("source", ""),
+                "language": meta.get("language", "vi"),
                 "phan": current_phan,
                 "don_vi": current_muc,
                 "tieu_de": current_tieu_de,
@@ -168,14 +179,34 @@ def process_all(clean_dir: Path, output_dir: Path):
     all_chunks = []
 
     for md_file in sorted(clean_dir.glob("**/*.md")):
-        content = md_file.read_text(encoding="utf-8")
+        # NFC: macOS lưu dấu tiếng Việt dạng tách rời (NFD) -> "Điều" không khớp regex
+        raw = unicodedata.normalize("NFC", md_file.read_text(encoding="utf-8"))
+        # Metadata do bước clean ghi sẵn — không trích lại từ nội dung đã làm sạch
+        fm, content = parse_front_matter(raw)
 
         if detect_foreign_standard(content, md_file.name):
             merged = process_foreign_file(md_file, output_dir)
             label = "FOREIGN"
         else:
-            doc_type = detect_type(content, md_file.name)
-            meta = extract_meta(content, doc_type)
+            doc_type = fm.get("loai") or detect_type(content, md_file.name)
+            if fm.get("so_hieu"):
+                meta = {
+                    "loai": doc_type,
+                    "van_ban": fm.get("van_ban", ""),
+                    "so_hieu": fm.get("so_hieu", ""),
+                    "co_quan": fm.get("co_quan", ""),
+                    "nam": fm.get("nam", ""),
+                    "hieu_luc": fm.get("hieu_luc", ""),
+                }
+            else:
+                # File cũ chưa có front-matter: trích như trước, kèm gợi ý tên file
+                meta = extract_meta(content, doc_type, md_file.name)
+
+            meta["source"] = fm.get("source") or md_file.name
+
+            if not meta["so_hieu"]:
+                print(f" [WARN] {md_file.name[:40]}: KHÔNG xác định được số hiệu -> "
+                      f"trích dẫn sẽ thiếu danh tính văn bản")
 
             if meta["loai"] == "LUAT":
                 chunks = split_by_dieu(content, meta)

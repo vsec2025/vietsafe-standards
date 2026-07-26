@@ -1,3 +1,12 @@
+---
+loai: LUAT
+van_ban: Luật 55/2024/QH15
+co_quan: Quốc hội
+nam: 2024
+so_hieu: 55/2024/QH15
+source: luat55.md
+---
+
 QUỐC HỘI
 Luật số: 55/2024/QH15
 

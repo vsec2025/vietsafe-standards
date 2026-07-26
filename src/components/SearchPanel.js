@@ -143,10 +143,10 @@ export default function SearchPanel() {
   }
 
   function getDocLabel(r) {
-    if (r.loai === 'LUAT' && r.van_ban) return r.van_ban
-    if (r.loai === 'QCVN') return 'QCVN 06:2022/BXD'
-    if (r.loai === 'TCVN') return 'TCVN 7336:2021'
-    return r.van_ban || r.loai || 'N/A'
+    // Hiển thị đúng văn bản của chunk. Không gán cứng số hiệu theo loại —
+    // trước đây mọi chunk QCVN đều bị dán nhãn "QCVN 06:2022/BXD" dù đến từ
+    // văn bản khác, dẫn tới trích dẫn sai.
+    return r.van_ban || r.so_hieu || `${r.loai || 'Văn bản'} (chưa xác định số hiệu)`
   }
 
   function getDocSection(r) {

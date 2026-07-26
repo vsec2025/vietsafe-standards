@@ -56,12 +56,11 @@ export async function POST(request) {
 
     const context = activeChunks
       .map((r, i) => {
+        // Dùng đúng metadata của chunk. TUYỆT ĐỐI không suy đoán số hiệu:
+        // gán mặc định (vd. mọi chunk QCVN -> "QCVN 06:2022/BXD") sẽ tạo ra
+        // trích dẫn sai — nguy hiểm hơn là không có trích dẫn.
         const docName =
-          r.loai === 'LUAT' ? (r.van_ban || 'Luật PCCC')
-          : r.loai === 'QCVN' ? (r.so_hieu || 'QCVN 06:2022/BXD')
-          : r.loai === 'TCVN' ? (r.so_hieu || 'TCVN')
-          : r.loai === 'NFPA' ? (r.so_hieu || 'NFPA')
-          : (r.van_ban || r.loai || 'N/A')
+          r.van_ban || r.so_hieu || `${r.loai || 'Văn bản'} (chưa xác định số hiệu)`
         const section = [r.phan, r.don_vi, r.tieu_de].filter(Boolean).join(' — ')
         return `[${i + 1}] ${docName} | ${section}\n${r.content || r.text || ''}`
       })
@@ -91,7 +90,11 @@ export async function POST(request) {
 
     const aiData = await aiRes.json()
     const rawReply = aiData.content?.[0]?.text || ''
-    const has_basis = /HAS_BASIS:\s*true/i.test(rawReply)
+    // Chỉ công nhận "có cơ sở pháp lý" khi ngữ cảnh thực sự có văn bản xác định
+    // được danh tính — tránh gắn huy hiệu cho câu trả lời dựa trên chunk khuyết
+    // metadata (người dùng sẽ tin vào một trích dẫn không kiểm chứng được).
+    const hasIdentifiedSource = activeChunks.some((r) => r.van_ban || r.so_hieu)
+    const has_basis = /HAS_BASIS:\s*true/i.test(rawReply) && hasIdentifiedSource
     const reply = rawReply.replace(/HAS_BASIS:\s*(true|false)/i, '').trim()
 
     const latency_ms = Date.now() - startTime
@@ -100,7 +103,7 @@ export async function POST(request) {
 
     const citations = activeChunks.map((r) => ({
       id: r.id,
-      label: [r.van_ban || r.loai, r.don_vi, r.tieu_de].filter(Boolean).join(' — '),
+      label: [r.van_ban || r.so_hieu || r.loai, r.don_vi, r.tieu_de].filter(Boolean).join(' — '),
       score: r.score,
     }))
 
