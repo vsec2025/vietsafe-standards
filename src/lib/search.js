@@ -100,8 +100,10 @@ export async function loadSearchData() {
     const fs = require('fs')
     const path = require('path')
     
-    // Load chunks
-    const chunksPath = path.join(process.cwd(), 'public', 'data', 'chunks.jsonl')
+    // Đọc từ data/ chứ KHÔNG phải public/ — mọi thứ trong public/ được Next.js
+    // phục vụ tĩnh, nên để corpus ở đó thì ai cũng tải trọn bộ văn bản tại
+    // /data/chunks.jsonl mà không cần đăng nhập (vô hiệu hoá kiểm tra ở /api/search).
+    const chunksPath = path.join(process.cwd(), 'data', 'chunks.jsonl')
     const chunksRaw = fs.readFileSync(chunksPath, 'utf-8')
     cachedChunks = chunksRaw
       .split('\n')
