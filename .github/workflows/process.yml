@@ -34,3 +34,25 @@ jobs:
           git diff --staged --quiet || git commit -m "auto: pipeline - $(date +%Y%m%d) - $(wc -l < data/chunks.jsonl) chunks"
           git pull --rebase origin main || true
           git push origin main
+
+      # Nạp corpus vào Upstash Vector ngay sau khi chunks đổi. Nếu để chạy tay,
+      # vector sẽ lệch khỏi corpus mỗi lần upload/xoá văn bản — đúng loại sai
+      # lệch đã khiến văn bản đã xoá vẫn được trích dẫn.
+      # Chạy SAU commit để lỗi vector không chặn việc cập nhật corpus.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Sync vector index
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          UPSTASH_VECTOR_REST_URL: ${{ secrets.UPSTASH_VECTOR_REST_URL }}
+          UPSTASH_VECTOR_REST_TOKEN: ${{ secrets.UPSTASH_VECTOR_REST_TOKEN }}
+        run: |
+          if [ -z "$UPSTASH_VECTOR_REST_URL" ] || [ -z "$GOOGLE_API_KEY" ]; then
+            echo "⏭  Bỏ qua: chưa cấu hình secrets GOOGLE_API_KEY / UPSTASH_VECTOR_REST_*."
+            echo "   Thêm tại: Settings → Secrets and variables → Actions"
+            exit 0
+          fi
+          node scripts/ingest-corpus.mjs
