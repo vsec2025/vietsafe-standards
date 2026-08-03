@@ -36,7 +36,10 @@ def build_bm25_index(chunks: list, k1: float = 1.5, b: float = 0.75) -> dict:
     """
     N = len(chunks)
     if N == 0:
-        return {}
+        # Nơi gọi unpack 2 giá trị: `inverted, idf = build_bm25_index(chunks)`.
+        # Trả về một dict rỗng gây ValueError, làm hỏng pipeline đúng lúc xoá
+        # hết văn bản — trường hợp cần nó chạy trơn tru nhất.
+        return {}, {}
 
     # Tokenize tất cả chunks
     tokenized = []
