@@ -1,5 +1,11 @@
 {
-  "last_updated": "2026-08-03T17:52:58Z",
-  "total_chunks": 0,
-  "van_ban": []
+  "last_updated": "2026-08-03T17:58:10Z",
+  "total_chunks": 105,
+  "van_ban": [
+    {
+      "so_hieu": "QCVN 06:2022/BXD",
+      "chunks": 105,
+      "tokens": 107081
+    }
+  ]
 }
