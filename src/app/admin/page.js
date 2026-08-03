@@ -382,7 +382,7 @@ export default function AdminPage() {
       await fetch('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update', document: { id: editDoc.id, title: editTitle, status: editStatus } })
+        body: JSON.stringify({ action: 'update', document: { filename: editDoc.filename, title: editTitle, status: editStatus } })
       })
       setEditDoc(null)
       fetchDocs()
@@ -546,15 +546,17 @@ export default function AdminPage() {
                     <div key={doc.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-vs-dark truncate">{doc.title}</p>
-                        <p className="text-xs text-vs-gray-mid">{doc.status} • {doc.filename}</p>
+                        <p className="text-xs text-vs-gray-mid truncate">
+                          {doc.status} • {doc.chunks} chunk • {doc.filename}
+                        </p>
                       </div>
                       <button onClick={() => { setEditDoc(doc); setEditTitle(doc.title); setEditStatus(doc.status) }}
                         className="text-xs px-3 py-1 text-vs-red border border-vs-red rounded hover:bg-red-50">Sửa</button>
                       <button onClick={async () => {
-                        if (!confirm(`Xóa "${doc.title}"? Sẽ xóa cả file trên GitHub và chunks.`)) return
+                        if (!confirm(`Xoá "${doc.title}"?\n\nSẽ xoá file khỏi GitHub và gỡ toàn bộ ${doc.chunks} chunk khỏi corpus sau khi pipeline chạy xong.`)) return
                         const res = await fetch('/api/documents/delete', {
                           method: 'POST', headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ docId: doc.id, filename: doc.filename })
+                          body: JSON.stringify({ filename: doc.filename })
                         })
                         const data = await res.json()
                         if (data.success) { alert(data.message); fetchDocs() }

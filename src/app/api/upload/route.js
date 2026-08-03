@@ -63,28 +63,21 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Lỗi upload lên GitHub' }, { status: 502 })
     }
 
-    // Add document to Redis list
+    // Văn bản xuất hiện trong danh sách khi pipeline sinh chunk cho nó — danh
+    // sách được suy từ corpus, không lưu riêng trong Redis nữa. Ở đây chỉ ghi
+    // metadata của người dùng, và gỡ cờ đã-xoá nếu đây là lần upload lại.
     try {
-      const { getDocuments, setDocuments } = await import('@/lib/redis')
-      const docs = await getDocuments() || []
-      const existingIdx = docs.findIndex(d => d.filename === file.name)
-      const newDoc = {
-        id: `doc_${Date.now()}`,
-        title: file.name.replace('.md', '').replace(/[-_]/g, ' '),
-        filename: file.name,
-        status: 'active',
+      const { patchDocMeta } = await import('@/lib/redis')
+      const now = new Date().toISOString()
+      await patchDocMeta(file.name, {
         uploadedBy: session.user.email,
-        uploadedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
-      if (existingIdx >= 0) {
-        docs[existingIdx] = { ...docs[existingIdx], updatedAt: new Date().toISOString() }
-      } else {
-        docs.push(newDoc)
-      }
-      await setDocuments(docs)
+        uploadedAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        deletedBy: null,
+      })
     } catch (e) {
-      console.error('Redis doc list update error:', e)
+      console.error('Redis doc meta update error:', e)
     }
 
     return NextResponse.json({

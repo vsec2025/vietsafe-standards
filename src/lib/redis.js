@@ -48,19 +48,36 @@ export async function getAllUsers() {
   return users
 }
 
-// Document metadata
-export async function getDocuments() {
+// ── Document metadata ───────────────────────────────────────────────────────
+// Danh sách văn bản KHÔNG lưu ở Redis nữa — nó được suy trực tiếp từ corpus
+// (data/chunks.jsonl), xem src/lib/documents.js. Redis chỉ giữ phần metadata
+// mà người dùng chỉnh được và corpus không biết: trạng thái hiệu lực, tiêu đề
+// tự đặt, ai upload, và cờ đã xoá.
+//
+// Khoá theo TÊN FILE THẬT trong raw/ — danh sách cũ dùng id tự sinh với tên
+// file bịa (vd. 'luat-55-2024.md' trong khi file thật là 'luat55.md'), khiến
+// nút Xoá gọi GitHub xoá một file không tồn tại.
+const DOC_META_KEY = 'documents:meta'
+
+export async function getDocMeta() {
   const r = getRedis()
-  if (!r) return []
-  const docs = await r.get('documents:list')
-  if (!docs) return []
-  return typeof docs === 'string' ? JSON.parse(docs) : docs
+  if (!r) return {}
+  const data = await r.get(DOC_META_KEY)
+  if (!data) return {}
+  return typeof data === 'string' ? JSON.parse(data) : data
 }
 
-export async function setDocuments(docs) {
+export async function setDocMeta(meta) {
   const r = getRedis()
   if (!r) return
-  await r.set('documents:list', JSON.stringify(docs))
+  await r.set(DOC_META_KEY, JSON.stringify(meta))
+}
+
+export async function patchDocMeta(filename, patch) {
+  const meta = await getDocMeta()
+  meta[filename] = { ...(meta[filename] || {}), ...patch }
+  await setDocMeta(meta)
+  return meta[filename]
 }
 
 // Chat history

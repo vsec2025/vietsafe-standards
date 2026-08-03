@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { getDocuments, setDocuments } from '@/lib/redis'
+import { listDocuments, DOC_STATUSES } from '@/lib/documents'
+import { patchDocMeta } from '@/lib/redis'
 
 export async function GET() {
   try {
@@ -9,9 +10,10 @@ export async function GET() {
     if (!session?.user) {
       return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 })
     }
-    const docs = await getDocuments()
-    return NextResponse.json({ documents: docs })
+    const documents = await listDocuments()
+    return NextResponse.json({ documents })
   } catch (err) {
+    console.error('List documents error:', err)
     return NextResponse.json({ error: 'Lỗi tải danh sách' }, { status: 500 })
   }
 }
@@ -24,39 +26,30 @@ export async function POST(request) {
     }
 
     const { action, document } = await request.json()
-    const docs = await getDocuments() || []
 
-    if (action === 'add') {
-      const newDoc = {
-        id: `doc_${Date.now()}`,
-        title: document.title,
-        filename: document.filename,
-        status: document.status || 'active',
-        uploadedBy: session.user.email,
-        uploadedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
-      docs.push(newDoc)
-      await setDocuments(docs)
-      return NextResponse.json({ document: newDoc })
+    // Chỉ còn 'update': văn bản xuất hiện trong danh sách khi có mặt trong
+    // corpus (thông qua Upload), nên không còn thao tác 'add' thủ công.
+    if (action !== 'update') {
+      return NextResponse.json({ error: 'Action không hợp lệ' }, { status: 400 })
     }
 
-    if (action === 'update' && document?.id) {
-      const idx = docs.findIndex(d => d.id === document.id)
-      if (idx === -1) return NextResponse.json({ error: 'Không tìm thấy' }, { status: 404 })
-      docs[idx] = { ...docs[idx], ...document, updatedAt: new Date().toISOString() }
-      await setDocuments(docs)
-      return NextResponse.json({ document: docs[idx] })
+    const filename = document?.filename
+    if (!filename) {
+      return NextResponse.json({ error: 'Thiếu filename' }, { status: 400 })
+    }
+    if (document.status && !DOC_STATUSES.includes(document.status)) {
+      return NextResponse.json({ error: 'Trạng thái không hợp lệ' }, { status: 400 })
     }
 
-    if (action === 'delete' && document?.id) {
-      const filtered = docs.filter(d => d.id !== document.id)
-      await setDocuments(filtered)
-      return NextResponse.json({ success: true })
-    }
+    const patch = { updatedAt: new Date().toISOString() }
+    if (document.title !== undefined) patch.title = document.title
+    if (document.status !== undefined) patch.status = document.status
 
-    return NextResponse.json({ error: 'Action không hợp lệ' }, { status: 400 })
+    await patchDocMeta(filename, patch)
+
+    return NextResponse.json({ ok: true })
   } catch (err) {
+    console.error('Update document error:', err)
     return NextResponse.json({ error: 'Lỗi hệ thống' }, { status: 500 })
   }
 }

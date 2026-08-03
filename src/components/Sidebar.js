@@ -97,9 +97,13 @@ export default function Sidebar({ onDocSelect }) {
                       <span className={`text-[10px] px-1.5 py-0.5 rounded ${st.color}`}>
                         {st.label}
                       </span>
-                      <span className="text-[10px] text-vs-gray-mid">
-                        {new Date(doc.updatedAt).toLocaleDateString('vi-VN')}
-                      </span>
+                      {/* Văn bản chưa từng chỉnh qua giao diện không có updatedAt —
+                          new Date('') sẽ hiển thị "Invalid Date". */}
+                      {doc.updatedAt && !isNaN(new Date(doc.updatedAt)) && (
+                        <span className="text-[10px] text-vs-gray-mid">
+                          {new Date(doc.updatedAt).toLocaleDateString('vi-VN')}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
