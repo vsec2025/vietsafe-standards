@@ -7,7 +7,9 @@ import UsageTracker from './UsageTracker'
 
 const MODES = [
   { key: 'vn_only',      label: 'Tiêu chuẩn VN',    desc: 'Hỏi đáp quy định PCCC Việt Nam',        icon: '🇻🇳' },
-  { key: 'intl_compare', label: 'Đối chiếu QT',      desc: 'So sánh với NFPA, ISO, EN',              icon: '🌐' },
+  // Tạm tắt — corpus chưa có NFPA/ISO/EN nên không có gì để đối chiếu.
+  // Bật lại: bỏ comment dòng dưới VÀ đặt VSEC_ENABLE_INTL_COMPARE=1 trên server.
+  // { key: 'intl_compare', label: 'Đối chiếu QT',   desc: 'So sánh với NFPA, ISO, EN',              icon: '🌐' },
   { key: 'project',      label: 'Dự án',             desc: 'Kiểm tra tài liệu dự án với tiêu chuẩn', icon: '📋' },
 ]
 

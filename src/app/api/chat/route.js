@@ -4,8 +4,15 @@ import { authOptions } from '@/lib/auth'
 import { hybridSearch } from '@/lib/hybrid-search'
 import { logQuery, getUserProfile, upsertUserProfile, incrementTokenUsage } from '@/lib/supabase'
 
-const MODEL_DEFAULT = process.env.VSEC_DEFAULT_MODEL ?? 'claude-haiku-4-5-20251001'
+const MODEL_DEFAULT = process.env.VSEC_DEFAULT_MODEL ?? 'claude-sonnet-5'
 const MODEL_COMPARE = process.env.VSEC_COMPARE_MODEL ?? 'claude-sonnet-5'
+
+// Chế độ đối chiếu Việt–quốc tế tạm tắt: corpus hiện chỉ có văn bản Việt Nam
+// (Luật 55, QCVN 06, TCVN 7336, NQ 66.18) — chưa có NFPA/ISO/EN để so sánh,
+// nên chế độ này sẽ tạo ra đối chiếu không có căn cứ.
+// Bật lại: đặt biến môi trường VSEC_ENABLE_INTL_COMPARE=1 và bỏ comment mục
+// tương ứng trong MODES ở src/components/ChatPanel.js
+const INTL_COMPARE_ENABLED = process.env.VSEC_ENABLE_INTL_COMPARE === '1'
 
 const SYSTEM_BASE = `Bạn là trợ lý chuyên về tiêu chuẩn PCCC (phòng cháy chữa cháy) của Công ty VIETSAFE E&C.
 Trả lời bằng ngôn ngữ của câu hỏi. Dùng Markdown: bảng khi so sánh, heading cho các phần, bold từ khóa quan trọng.
@@ -35,6 +42,15 @@ export async function POST(request) {
     const { message, history, mode = 'vn_only' } = await request.json()
     if (!message?.trim()) {
       return NextResponse.json({ error: 'Tin nhắn không hợp lệ' }, { status: 400 })
+    }
+
+    // Chặn ở server, không chỉ ẩn trên giao diện — client cũ hoặc gọi API
+    // trực tiếp vẫn không dùng được chế độ đang tắt.
+    if (mode === 'intl_compare' && !INTL_COMPARE_ENABLED) {
+      return NextResponse.json(
+        { error: 'Chế độ đối chiếu quốc tế đang tạm tắt. Vui lòng dùng chế độ Tiêu chuẩn VN.' },
+        { status: 400 }
+      )
     }
 
     // Kiểm tra token quota (nếu Supabase được cấu hình)

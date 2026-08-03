@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { hybridSearch } from '@/lib/hybrid-search'
 import { logQuery, getUserProfile, incrementTokenUsage } from '@/lib/supabase'
 
-const MODEL = process.env.VSEC_DEFAULT_MODEL ?? 'claude-haiku-4-5-20251001'
+const MODEL = process.env.VSEC_DEFAULT_MODEL ?? 'claude-sonnet-5'
 
 const SYSTEM_BATCH = `Bạn là chuyên gia kiểm tra sự tuân thủ tiêu chuẩn PCCC Việt Nam của Công ty VIETSAFE E&C.
 
