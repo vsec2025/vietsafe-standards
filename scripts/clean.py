@@ -28,6 +28,12 @@ def detect_type(content: str, filename: str) -> str:
         return "QCVN"
     if "TCVN" in fname or "TC_" in fname:
         return "TCVN"
+    # Tiêu chuẩn ngành, vd. "11 TCN_2006" (Quy phạm trang bị điện).
+    # Không có nhánh này, tên file chứa "TCN_" trượt mọi điều kiện trên và rơi
+    # vào mặc định LUAT -> chunk theo "Điều N" vốn không tồn tại -> 0 chunk.
+    # (không dùng \bTCN\b: '_' là ký tự từ nên "TCN_2006" không có ranh giới từ)
+    if "TCN" in fname and "TCVN" not in fname:
+        return "TCN"
     if re.search(r'Luật\s+số|LUẬT\s+SỐ|/QH\d+|NĐ-CP|TT-B', content[:500]):
         return "LUAT"
     if re.search(r'QUY CHUẨN KỸ THUẬT', content[:500], re.IGNORECASE):
@@ -38,9 +44,13 @@ def detect_type(content: str, filename: str) -> str:
 
 # Số hiệu văn bản. Lưu ý: các mẫu này phải khớp cả dạng có khoảng trắng quanh
 # dấu hai chấm ("TCVN 7336 : 2021") lẫn dạng liền ("QCVN 06:2022/BXD").
-QCVN_RE = re.compile(r'QCVN\s*(\d+)\s*:\s*(\d{4})\s*/\s*([A-ZĐ]{2,})', re.IGNORECASE)
-QCVN_LOOSE_RE = re.compile(r'QCVN\s*(\d+)\s*:\s*(\d{4})', re.IGNORECASE)
-TCVN_RE = re.compile(r'TCVN\s*(\d+)\s*:\s*(\d{4})', re.IGNORECASE)
+# Số phần có gạch nối là chuyện thường với tiêu chuẩn nhiều phần
+# (vd. "TCVN 7568-14:2025"). Nếu không bắt được dạng này, regex sẽ bỏ qua số
+# hiệu THẬT ở đầu văn bản rồi vớ phải một TRÍCH DẪN tới tiêu chuẩn khác nằm
+# phía sau — gán nhầm danh tính cho toàn bộ chunk của file.
+QCVN_RE = re.compile(r'QCVN\s*(\d+(?:-\d+)?)\s*:\s*(\d{4})\s*/\s*([A-ZĐ]{2,})', re.IGNORECASE)
+QCVN_LOOSE_RE = re.compile(r'QCVN\s*(\d+(?:-\d+)?)\s*:\s*(\d{4})', re.IGNORECASE)
+TCVN_RE = re.compile(r'TCVN\s*(\d+(?:-\d+)?)\s*:\s*(\d{4})', re.IGNORECASE)
 LUAT_RE = re.compile(r'Luật\s+số[:\s]+(\d+/\d+/\w+)', re.IGNORECASE)
 # Nghị quyết / Nghị định / Thông tư: "Số: 66.18/2026/NQ-CP", "Số: 50/2024/NĐ-CP"
 VBQPPL_RE = re.compile(r'Số[:\s]+([\d.]+/\d{4}/[A-ZĐ\-]+)', re.IGNORECASE)
@@ -50,19 +60,25 @@ VB_LABELS = {
 }
 
 
+def pad_num(num: str) -> str:
+    """'6' -> '06', nhưng giữ nguyên số phần có gạch nối ('7568-14')."""
+    return f"{int(num):02d}" if num.isdigit() else num
+
+
 def meta_from_filename(filename: str, doc_type: str):
     """Suy số hiệu từ tên file khi nội dung không cho biết.
 
-    Ví dụ: 'QCVN_06_2022_...' -> ('QCVN 06:2022', '2022')
-           'TC_7336_2021_...' -> ('TCVN 7336:2021', '2021')
+    Ví dụ: 'QCVN_06_2022_...'    -> ('QCVN 06:2022', '2022')
+           'TC_7336_2021_...'    -> ('TCVN 7336:2021', '2021')
+           'TC_7568-14_2025_...' -> ('TCVN 7568-14:2025', '2025')
     """
     name = Path(filename).stem
     if doc_type == "QCVN":
-        m = re.search(r'QCVN[_\s-]*(\d+)[_\s:-]+(\d{4})', name, re.IGNORECASE)
+        m = re.search(r'QCVN[_\s-]*(\d+(?:-\d+)?)[_\s:]+(\d{4})', name, re.IGNORECASE)
         if m:
-            return f"QCVN {int(m.group(1)):02d}:{m.group(2)}", m.group(2)
+            return f"QCVN {pad_num(m.group(1))}:{m.group(2)}", m.group(2)
     elif doc_type == "TCVN":
-        m = re.search(r'TC(?:VN)?[_\s-]*(\d+)[_\s:-]+(\d{4})', name, re.IGNORECASE)
+        m = re.search(r'TC(?:VN)?[_\s-]*(\d+(?:-\d+)?)[_\s:]+(\d{4})', name, re.IGNORECASE)
         if m:
             return f"TCVN {m.group(1)}:{m.group(2)}", m.group(2)
     return "", ""
@@ -106,7 +122,7 @@ def extract_meta(content: str, doc_type: str, filename: str = "") -> dict:
     elif doc_type == "QCVN":
         m = QCVN_RE.search(head) or QCVN_LOOSE_RE.search(head)
         if m:
-            so = f"QCVN {int(m.group(1)):02d}:{m.group(2)}"
+            so = f"QCVN {pad_num(m.group(1))}:{m.group(2)}"
             if m.re is QCVN_RE:
                 so += "/" + m.group(3).upper()
             meta["so_hieu"] = so
@@ -119,6 +135,16 @@ def extract_meta(content: str, doc_type: str, filename: str = "") -> dict:
             meta["so_hieu"] = f"TCVN {m.group(1)}:{m.group(2)}"
             meta["nam"] = m.group(2)
         meta["co_quan"] = "Bộ Khoa học và Công nghệ"
+
+    elif doc_type == "TCN":
+        # Tiêu chuẩn ngành: "11 TCN-18:2006", "11 TCN_2006"
+        m = re.search(r'(\d+)\s*TCN[\s_-]*(\d{2,3})?[\s_-]*(\d{4})', head + " " + filename,
+                      re.IGNORECASE)
+        if m:
+            phan = f"-{m.group(2)}" if m.group(2) else ""
+            meta["so_hieu"] = f"{m.group(1)} TCN{phan}:{m.group(3)}"
+            meta["nam"] = m.group(3)
+        meta["co_quan"] = "Bộ Công nghiệp"
 
     # Dự phòng: suy từ tên file nếu nội dung không cho biết số hiệu
     if not meta["so_hieu"] and filename:

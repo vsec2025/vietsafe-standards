@@ -16,10 +16,17 @@ MAX_TOKENS = 1500  # Gioi han token/chunk de toi uu RAG
 
 # Các mẫu phải khớp cả dạng CÓ DẤU (văn bản thật) lẫn KHÔNG DẤU.
 # Trước đây chỉ có dạng không dấu ("Dieu") nên toàn bộ Luật không sinh chunk nào.
-DIEU_RE = re.compile(r'^#{1,4}\s*((?:Điều|Dieu)\s+(\d+)[\.:]?\s*(.*))', re.IGNORECASE)
-MUC_SO_RE = re.compile(r'^#{1,4}\s*(\d+\.\d+(?:\.\d+)?)\s+(.*)')
-CHUONG_RE = re.compile(r'^#{1,3}\s*((?:Chương|Chuong)\s+[IVXLCDM\d]+[\.:]?\s*(.*))', re.IGNORECASE)
-PHAN_RE = re.compile(r'^#{1,3}\s*((?:Phần|Phan)\s+\d+|(?:Phụ lục|Phu luc)\s+\w+)[\.:]?\s*(.*)', re.IGNORECASE)
+DIEU_RE = re.compile(r'^#{1,6}\s*\*{0,2}\s*((?:Điều|Dieu)\s+(\d+)[\.:]?\s*(.*))', re.IGNORECASE)
+
+# Mục đánh số. Phải chấp nhận cả ba biến thể gặp trong tiêu chuẩn Việt Nam:
+#   "3.2.8 Lối ra"        — không có dấu chấm cuối
+#   "1.1. Phạm vi"        — CÓ dấu chấm cuối (rất phổ biến; trước đây trượt hết)
+#   "I.1.16. Rò dầu"      — tiền tố số La Mã (11 TCN, quy phạm trang bị điện)
+# Heading cũng hay bọc trong **đậm** và sâu tới 5-6 cấp '#'.
+MUC_SO_RE = re.compile(r'^#{1,6}\s*\*{0,2}\s*((?:[IVXLC]+\.)?\d+(?:\.\d+)+)\.?\s*\*{0,2}\s*(.*)')
+
+CHUONG_RE = re.compile(r'^#{1,4}\s*\*{0,2}\s*((?:Chương|Chuong)\s+[IVXLCDM\d.]+[\.:]?\s*(.*))', re.IGNORECASE)
+PHAN_RE = re.compile(r'^#{1,4}\s*\*{0,2}\s*((?:Phần|Phan)\s+[IVXLCDM\d]+|(?:Phụ lục|Phu luc)\s+\w+)[\.:]?\s*(.*)', re.IGNORECASE)
 KHOAN_RE = re.compile(r'^\d+\.\s')
 DIEM_RE = re.compile(r'^[a-zđ]\)\s', re.IGNORECASE)
 
@@ -213,9 +220,13 @@ def process_all(clean_dir: Path, output_dir: Path):
             else:
                 chunks = split_by_muc(content, meta)
 
+            # Gộp các mục quá ngắn vào chunk trước — nhưng KHÔNG vượt trần.
+            # Bước gộp chạy sau split_large_chunk nên trước đây nó có thể dồn
+            # hàng chục mục ngắn thành một khối lớn hơn cả giới hạn đã cắt.
             merged = []
             for c in chunks:
-                if merged and c["tokens"] < 80:
+                if (merged and c["tokens"] < 80
+                        and merged[-1]["tokens"] + c["tokens"] <= MAX_TOKENS):
                     merged[-1]["content"] += "\n\n" + c["content"]
                     merged[-1]["tokens"] = estimate_tokens(merged[-1]["content"])
                 else:
