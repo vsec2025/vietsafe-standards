@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "seed": "node scripts/seed-redis.mjs"
+    "seed": "node scripts/seed-redis.mjs",
+    "ingest": "node scripts/ingest-corpus.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
