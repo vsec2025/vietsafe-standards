@@ -1,26 +1,26 @@
 {
-  "last_updated": "2026-08-04T01:41:04Z",
-  "total_chunks": 434,
+  "last_updated": "2026-08-04T01:42:18Z",
+  "total_chunks": 854,
   "van_ban": [
     {
       "so_hieu": "11 TCN-18:2006",
-      "chunks": 151,
-      "tokens": 191333
+      "chunks": 302,
+      "tokens": 382666
     },
     {
       "so_hieu": "QCVN 02:2020/BCA",
-      "chunks": 37,
-      "tokens": 16802
+      "chunks": 74,
+      "tokens": 33604
     },
     {
       "so_hieu": "QCVN 06:2022/BXD",
-      "chunks": 122,
-      "tokens": 107037
+      "chunks": 244,
+      "tokens": 214074
     },
     {
       "so_hieu": "QCVN 10:2025/BCA",
-      "chunks": 31,
-      "tokens": 33407
+      "chunks": 62,
+      "tokens": 66814
     },
     {
       "so_hieu": "QCVN 13:2018/BXD",
@@ -29,18 +29,18 @@
     },
     {
       "so_hieu": "TCVN 13456:2022",
-      "chunks": 15,
-      "tokens": 3873
+      "chunks": 30,
+      "tokens": 7746
     },
     {
       "so_hieu": "TCVN 7336:2021",
-      "chunks": 25,
-      "tokens": 21251
+      "chunks": 50,
+      "tokens": 42502
     },
     {
       "so_hieu": "TCVN 7568-14:2025",
-      "chunks": 39,
-      "tokens": 14594
+      "chunks": 78,
+      "tokens": 29188
     }
   ]
 }
