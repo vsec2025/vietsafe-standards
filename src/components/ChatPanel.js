@@ -208,16 +208,27 @@ export default function ChatPanel() {
                   {/* Sources */}
                   {msg.sources?.length > 0 && (
                     <div className="mt-2 pt-2 border-t border-gray-200">
-                      <p className="text-[10px] text-vs-gray-mid font-medium mb-1">📄 Nguồn tham khảo:</p>
+                      <p className="text-[10px] text-vs-gray-mid font-medium mb-1">
+                        📄 Nguồn tham khảo ({msg.sources.length}):
+                      </p>
                       <div className="flex flex-wrap gap-1">
+                        {/* Số thứ tự khớp với các dấu [1], [2] trong câu trả lời */}
                         {msg.sources.map((s, j) => (
-                          <span key={j} className="inline-block text-[10px] px-1.5 py-0.5 bg-white border border-gray-200 rounded text-vs-gray-mid">
-                            {s.label}
+                          <span key={j} className="inline-flex items-start gap-1 text-[10px] px-1.5 py-0.5 bg-white border border-gray-200 rounded text-vs-gray-mid">
+                            <b className="text-vs-red">[{j + 1}]</b>
+                            <span>{s.label}</span>
                           </span>
                         ))}
                       </div>
                     </div>
                   )}
+
+                  {/* Miễn trừ trách nhiệm — đây là công cụ hỗ trợ tra cứu,
+                      không thay thế thẩm duyệt của người có thẩm quyền. */}
+                  <p className="mt-2 text-[9px] italic text-vs-gray-mid leading-snug">
+                    Đây là điểm khởi đầu để tra cứu. Vui lòng đối chiếu lại với văn bản gốc
+                    trước khi sử dụng cho hồ sơ thiết kế hoặc thẩm duyệt.
+                  </p>
 
                   {/* Feedback + model */}
                   <div className="mt-2 pt-1.5 flex items-center gap-2">
