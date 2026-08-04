@@ -10,7 +10,43 @@ import json
 import unicodedata
 from pathlib import Path
 from clean import detect_type, extract_meta, parse_front_matter
+from clause import split_document
 from chunk_nfpa import detect_foreign_standard, process_foreign_file
+
+
+def slugify(s: str) -> str:
+    """'QCVN 06:2022/BXD' -> 'qcvn-06-2022-bxd' — dùng làm tiền tố mã điều khoản."""
+    s = unicodedata.normalize("NFKD", (s or "").lower())
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", s)).strip("-") or "vb"
+
+
+def _to_chunk(c: dict, meta: dict) -> dict:
+    """Chuyển một điều khoản thành chunk kèm mã định danh ổn định.
+
+    clause_id là nền cho Giai đoạn 1 (bấm vào trích dẫn mở đúng điều khoản).
+    """
+    doc_slug = slugify(meta.get("so_hieu") or meta.get("van_ban"))
+    clause_id = f"{doc_slug}/{c['don_vi'].replace(' ', '')}"
+    return {
+        "id": clause_id,
+        "clause_id": clause_id,
+        "doc_slug": doc_slug,
+        "van_ban": meta.get("van_ban", ""),
+        "so_hieu": meta.get("so_hieu", ""),
+        "loai": meta.get("loai", ""),
+        "co_quan": meta.get("co_quan", ""),
+        "nam": meta.get("nam", ""),
+        "source": meta.get("source", ""),
+        "language": meta.get("language", "vi"),
+        "phan": c.get("phan", ""),
+        "chuong": c.get("chuong", ""),
+        "so_dieu": c.get("so_dieu", ""),
+        "don_vi": c.get("don_vi", ""),
+        "tieu_de": c.get("tieu_de", ""),
+        "content": c["content"],
+        "tokens": c["tokens"],
+    }
 
 MAX_TOKENS = 1500  # Gioi han token/chunk de toi uu RAG
 
@@ -215,22 +251,21 @@ def process_all(clean_dir: Path, output_dir: Path):
                 print(f" [WARN] {md_file.name[:40]}: KHÔNG xác định được số hiệu -> "
                       f"trích dẫn sẽ thiếu danh tính văn bản")
 
-            if meta["loai"] == "LUAT":
-                chunks = split_by_dieu(content, meta)
-            else:
-                chunks = split_by_muc(content, meta)
-
-            # Gộp các mục quá ngắn vào chunk trước — nhưng KHÔNG vượt trần.
-            # Bước gộp chạy sau split_large_chunk nên trước đây nó có thể dồn
-            # hàng chục mục ngắn thành một khối lớn hơn cả giới hạn đã cắt.
-            merged = []
-            for c in chunks:
-                if (merged and c["tokens"] < 80
-                        and merged[-1]["tokens"] + c["tokens"] <= MAX_TOKENS):
-                    merged[-1]["content"] += "\n\n" + c["content"]
-                    merged[-1]["tokens"] = estimate_tokens(merged[-1]["content"])
-                else:
-                    merged.append(c)
+            # Cắt theo ĐIỀU KHOẢN THẬT (xem scripts/clause.py). Bản cũ chỉ coi
+            # dòng '#' là mốc chia nên phần lớn điều khoản — vốn là đoạn văn mở
+            # đầu bằng số điều — bị bỏ sót, sinh ra chunk "(phan 25)" không trỏ
+            # tới điều khoản nào cả.
+            merged = [_to_chunk(c, meta) for c in split_document(content, MAX_TOKENS)]
+            # Cùng một số điều có thể xuất hiện hai lần trong văn bản ghép
+            # (phần chính và phần sửa đổi/phụ lục). Mã phải duy nhất để
+            # trích dẫn trỏ được về đúng một chỗ.
+            seen = {}
+            for ch in merged:
+                n = seen.get(ch["id"], 0) + 1
+                seen[ch["id"]] = n
+                if n > 1:
+                    ch["id"] = f"{ch['id']}~{n}"
+                    ch["clause_id"] = ch["id"]
             label = meta["loai"]
 
         if not merged:
