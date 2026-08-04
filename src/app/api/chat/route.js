@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { hybridSearch } from '@/lib/hybrid-search'
 import { logQuery, getUserProfile, upsertUserProfile, incrementTokenUsage } from '@/lib/supabase'
 import { callClaude } from '@/lib/claude'
+import { anchorOf } from '@/lib/documents'
 
 const MODEL_DEFAULT = process.env.VSEC_DEFAULT_MODEL ?? 'claude-sonnet-5'
 const MODEL_COMPARE = process.env.VSEC_COMPARE_MODEL ?? 'claude-sonnet-5'
@@ -144,8 +145,14 @@ export async function POST(request) {
     const inputTokens = aiData.usage?.input_tokens ?? 0
     const outputTokens = aiData.usage?.output_tokens ?? 0
 
+    // doc_slug + anchor để chip nguồn mở thẳng đúng điều khoản trong trang đọc
     const citations = activeChunks.map((r) => ({
       id: r.id,
+      doc_slug: r.doc_slug || '',
+      anchor: anchorOf(r),
+      don_vi: r.don_vi || '',
+      van_ban: r.van_ban || r.so_hieu || r.loai || '',
+      tieu_de: r.tieu_de || '',
       label: [r.van_ban || r.so_hieu || r.loai, r.don_vi, r.tieu_de].filter(Boolean).join(' — '),
       score: r.score,
     }))

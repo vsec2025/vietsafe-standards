@@ -550,6 +550,10 @@ export default function AdminPage() {
                           {doc.status} • {doc.chunks} chunk • {doc.filename}
                         </p>
                       </div>
+                      {doc.doc_slug && (
+                        <a href={`/van-ban/${doc.doc_slug}`} target="_blank" rel="noopener noreferrer"
+                          className="text-xs px-3 py-1 text-vs-gray border border-gray-300 rounded hover:bg-gray-100">Đọc</a>
+                      )}
                       <button onClick={() => { setEditDoc(doc); setEditTitle(doc.title); setEditStatus(doc.status) }}
                         className="text-xs px-3 py-1 text-vs-red border border-vs-red rounded hover:bg-red-50">Sửa</button>
                       <button onClick={async () => {

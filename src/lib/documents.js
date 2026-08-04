@@ -18,6 +18,45 @@ function titleFor(chunk) {
   return parts.filter(Boolean).join(' — ') || 'Văn bản chưa xác định'
 }
 
+/** Phần sau dấu '/' trong clause_id — dùng làm neo (#anchor) trên trang đọc. */
+export function anchorOf(chunk) {
+  const cid = chunk.clause_id || chunk.id || ''
+  const i = cid.indexOf('/')
+  return i === -1 ? cid : cid.slice(i + 1)
+}
+
+/**
+ * Toàn văn một văn bản, dựng từ chính các chunk đã cắt theo điều khoản.
+ *
+ * Dựng từ chunk (chứ không đọc lại file .md) để neo trên trang đọc LUÔN trùng
+ * khớp với trích dẫn mà chat trả về — không thể lệch nhau.
+ */
+export async function getDocument(slug) {
+  const { chunks } = await loadSearchData()
+  const list = (chunks || []).filter((c) => c.doc_slug === slug)
+  if (!list.length) return null
+
+  const f = list[0]
+  return {
+    slug,
+    van_ban: f.van_ban || f.so_hieu || slug,
+    so_hieu: f.so_hieu || '',
+    loai: f.loai || '',
+    co_quan: f.co_quan || '',
+    nam: f.nam || '',
+    source: f.source || '',
+    total_tokens: list.reduce((s, c) => s + (c.tokens || 0), 0),
+    clauses: list.map((c) => ({
+      anchor: anchorOf(c),
+      don_vi: c.don_vi || '',
+      tieu_de: c.tieu_de || '',
+      phan: c.phan || '',
+      chuong: c.chuong || '',
+      content: c.content || '',
+    })),
+  }
+}
+
 export async function listDocuments() {
   const [{ chunks }, meta] = await Promise.all([loadSearchData(), getDocMeta()])
 
@@ -34,6 +73,7 @@ export async function listDocuments() {
     byFile.set(filename, {
       id: filename,
       filename,
+      doc_slug: c.doc_slug || '', // để mở trang đọc /van-ban/<slug>
       title: titleFor(c),
       van_ban: c.van_ban || '',
       so_hieu: c.so_hieu || '',

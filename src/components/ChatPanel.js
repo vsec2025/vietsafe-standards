@@ -212,13 +212,33 @@ export default function ChatPanel() {
                         📄 Nguồn tham khảo ({msg.sources.length}):
                       </p>
                       <div className="flex flex-wrap gap-1">
-                        {/* Số thứ tự khớp với các dấu [1], [2] trong câu trả lời */}
-                        {msg.sources.map((s, j) => (
-                          <span key={j} className="inline-flex items-start gap-1 text-[10px] px-1.5 py-0.5 bg-white border border-gray-200 rounded text-vs-gray-mid">
-                            <b className="text-vs-red">[{j + 1}]</b>
-                            <span>{s.label}</span>
-                          </span>
-                        ))}
+                        {/* Số thứ tự khớp với các dấu [1], [2] trong câu trả lời.
+                            Bấm vào mở đúng điều khoản trong trang đọc văn bản. */}
+                        {msg.sources.map((s, j) => {
+                          const inner = (
+                            <>
+                              <b className="text-vs-red">[{j + 1}]</b>
+                              <span>{s.label}</span>
+                            </>
+                          )
+                          const cls =
+                            'inline-flex items-start gap-1 text-[10px] px-1.5 py-0.5 bg-white border border-gray-200 rounded text-vs-gray-mid'
+                          return s.doc_slug && s.anchor ? (
+                            <a
+                              key={j}
+                              href={`/van-ban/${s.doc_slug}#${encodeURIComponent(s.anchor)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Mở điều khoản gốc để đối chiếu"
+                              className={`${cls} hover:border-vs-red hover:text-vs-dark transition`}
+                            >
+                              {inner}
+                              <span className="text-vs-red">↗</span>
+                            </a>
+                          ) : (
+                            <span key={j} className={cls}>{inner}</span>
+                          )
+                        })}
                       </div>
                     </div>
                   )}
