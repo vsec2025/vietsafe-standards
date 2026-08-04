@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { hybridSearch } from '@/lib/hybrid-search'
 import { logQuery, getUserProfile, upsertUserProfile, incrementTokenUsage } from '@/lib/supabase'
+import { callClaude } from '@/lib/claude'
 
 const MODEL_DEFAULT = process.env.VSEC_DEFAULT_MODEL ?? 'claude-sonnet-5'
 const MODEL_COMPARE = process.env.VSEC_COMPARE_MODEL ?? 'claude-sonnet-5'
@@ -89,23 +90,27 @@ export async function POST(request) {
 
     const messages = [...(history || []).slice(-10), { role: 'user', content: message }]
 
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({ model, max_tokens: 1500, system: systemPrompt, messages }),
-    })
-
-    if (!aiRes.ok) {
-      console.error('Anthropic API error:', await aiRes.text())
+    let aiData, rawReply
+    try {
+      const out = await callClaude({
+        apiKey,
+        model,
+        system: systemPrompt,
+        messages,
+        maxTokens: 8000, // trần chung cho thinking + câu trả lời
+      })
+      rawReply = out.text
+      aiData = out.raw
+    } catch (e) {
       return NextResponse.json({ error: 'Lỗi gọi AI' }, { status: 502 })
     }
 
-    const aiData = await aiRes.json()
-    const rawReply = aiData.content?.[0]?.text || ''
+    if (!rawReply) {
+      return NextResponse.json(
+        { error: 'AI không trả về nội dung. Vui lòng thử lại.' },
+        { status: 502 }
+      )
+    }
     // Chỉ công nhận "có cơ sở pháp lý" khi ngữ cảnh thực sự có văn bản xác định
     // được danh tính — tránh gắn huy hiệu cho câu trả lời dựa trên chunk khuyết
     // metadata (người dùng sẽ tin vào một trích dẫn không kiểm chứng được).

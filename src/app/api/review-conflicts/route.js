@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getRedis } from '@/lib/redis'
 import { loadSearchData } from '@/lib/search'
+import { extractText } from '@/lib/claude'
 
 // POST: trigger conflict review for new document
 // GET: get pending conflicts
@@ -54,7 +55,7 @@ export async function POST(request) {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 2000,
+        max_tokens: 8000,
         system: `Bạn là chuyên gia pháp luật PCCC Việt Nam. Nhiệm vụ: so sánh văn bản MỚI với các văn bản CŨ, tìm các điều khoản CŨ bị thay thế, sửa đổi, hoặc bãi bỏ bởi văn bản mới.
 
 Trả về CHÍNH XÁC dạng JSON array, không có text khác:
@@ -83,7 +84,7 @@ CHỈ trả về JSON, không thêm text hay markdown.`,
     }
 
     const aiData = await response.json()
-    const rawText = aiData.content?.[0]?.text || '[]'
+    const rawText = extractText(aiData) || '[]'
     
     let conflicts = []
     try {

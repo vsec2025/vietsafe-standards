@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { hybridSearch } from '@/lib/hybrid-search'
 import { logQuery, getUserProfile, incrementTokenUsage } from '@/lib/supabase'
+import { extractText } from '@/lib/claude'
 
 const MODEL = process.env.VSEC_DEFAULT_MODEL ?? 'claude-sonnet-5'
 
@@ -96,7 +97,7 @@ export async function POST(request) {
         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 600,
+          max_tokens: 4000,
           system: SYSTEM_BATCH,
           messages: [{ role: 'user', content: prompt }],
         }),
@@ -110,7 +111,7 @@ export async function POST(request) {
 
       let parsed
       try {
-        const raw = aiData.content?.[0]?.text || '{}'
+        const raw = extractText(aiData) || '{}'
         parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim())
       } catch {
         parsed = { status: 'NEEDS_REVIEW', summary: 'Không phân tích được', issues: [], recommendations: [], has_basis: false }

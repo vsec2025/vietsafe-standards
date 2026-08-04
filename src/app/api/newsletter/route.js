@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getSupabase } from '@/lib/supabase'
+import { extractText } from '@/lib/claude'
 
 const MODEL = process.env.VSEC_COMPARE_MODEL ?? 'claude-sonnet-5'
 
@@ -68,7 +69,7 @@ export async function GET(request) {
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 2000,
+        max_tokens: 8000,
         system: SYSTEM_NEWSLETTER,
         messages: [{
           role: 'user',
@@ -79,7 +80,7 @@ export async function GET(request) {
 
     if (!aiRes.ok) return NextResponse.json({ error: 'Lỗi gọi AI' }, { status: 502 })
     const aiData = await aiRes.json()
-    const newsletter = aiData.content?.[0]?.text ?? ''
+    const newsletter = extractText(aiData)
 
     return NextResponse.json({ newsletter, stats, days, generated_at: new Date().toISOString() })
   } catch (err) {
