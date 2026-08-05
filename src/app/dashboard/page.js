@@ -1,17 +1,61 @@
 'use client'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Header from '@/components/Header'
 import Sidebar from '@/components/Sidebar'
 import SearchPanel from '@/components/SearchPanel'
 import ChatPanel from '@/components/ChatPanel'
+import ChatHistorySidebar from '@/components/chat/ChatHistorySidebar'
 
 export default function DashboardPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
   const [activePanel, setActivePanel] = useState('chat') // mobile toggle
   const [selectedDoc, setSelectedDoc] = useState(null)
+
+  // Sidebar trái có 2 tab: lịch sử chat và danh sách văn bản (giữ tính năng cũ)
+  const [leftTab, setLeftTab] = useState('history')
+  const [conversations, setConversations] = useState([])
+  const [convLoading, setConvLoading] = useState(true)
+  const [activeConv, setActiveConv] = useState(null)
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const d = await (await fetch('/api/conversations')).json()
+      setConversations(d.conversations || [])
+    } catch { /* Redis chưa cấu hình -> danh sách rỗng, chat vẫn dùng được */ }
+    finally { setConvLoading(false) }
+  }, [])
+
+  useEffect(() => { if (status === 'authenticated') loadConversations() }, [status, loadConversations])
+
+  function upsertConversation(entry) {
+    setActiveConv(entry.id)
+    setConversations((prev) => {
+      const rest = prev.filter((c) => c.id !== entry.id)
+      return [entry, ...rest]
+    })
+  }
+
+  async function renameConv(id, title) {
+    setConversations((p) => p.map((c) => (c.id === id ? { ...c, title } : c)))
+    await fetch('/api/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, title }),
+    }).catch(() => {})
+  }
+
+  async function deleteConv(id) {
+    setConversations((p) => p.filter((c) => c.id !== id))
+    if (activeConv === id) setActiveConv(null)
+    await fetch('/api/conversations', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }).catch(() => {})
+  }
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -60,18 +104,54 @@ export default function DashboardPage() {
 
       {/* Main 3-column layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left - documents sidebar */}
-        <div className={`w-64 border-r border-gray-200 flex-shrink-0 overflow-hidden ${
-          activePanel === 'docs' ? 'block' : 'hidden lg:block'
+        {/* Left - lịch sử chat / danh sách văn bản */}
+        <div className={`w-64 border-r border-gray-200 flex-shrink-0 flex flex-col overflow-hidden ${
+          activePanel === 'docs' ? 'flex' : 'hidden lg:flex'
         }`}>
-          <Sidebar onDocSelect={setSelectedDoc} />
+          <div className="flex border-b border-gray-200 bg-white shrink-0">
+            {[
+              { key: 'history', label: 'Lịch sử chat' },
+              { key: 'docs', label: 'Văn bản pháp quy' },
+            ].map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setLeftTab(t.key)}
+                className={`flex-1 py-2 text-[11px] font-medium transition ${
+                  leftTab === t.key
+                    ? 'text-vs-red border-b-2 border-vs-red'
+                    : 'text-vs-gray-mid hover:text-vs-gray'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1 overflow-hidden">
+            {leftTab === 'history' ? (
+              <ChatHistorySidebar
+                conversations={conversations}
+                activeId={activeConv}
+                loading={convLoading}
+                onNew={() => setActiveConv(null)}
+                onOpen={(id) => { setActiveConv(id); setActivePanel('chat') }}
+                onRename={renameConv}
+                onDelete={deleteConv}
+              />
+            ) : (
+              <Sidebar onDocSelect={setSelectedDoc} />
+            )}
+          </div>
         </div>
 
         {/* Center - AI Chat (main area) */}
         <div className={`flex-1 min-w-0 overflow-hidden ${
           activePanel === 'chat' ? 'block' : 'hidden lg:block'
         }`}>
-          <ChatPanel />
+          <ChatPanel
+            conversationId={activeConv}
+            onConversationSaved={upsertConversation}
+            onNewConversation={() => setActiveConv(null)}
+          />
         </div>
 
         {/* Right - Search */}

@@ -80,7 +80,83 @@ export async function patchDocMeta(filename, patch) {
   return meta[filename]
 }
 
-// Chat history
+// ── Hội thoại (sidebar lịch sử chat) ────────────────────────────────────────
+// Hai khoá cho mỗi người dùng:
+//   conv:<email>        -> mục lục [{id, title, createdAt, updatedAt, count}]
+//   conv:<email>:<id>   -> mảng tin nhắn của một hội thoại
+// Tách mục lục ra để hiện danh sách bên sidebar mà không phải tải toàn bộ
+// nội dung mọi hội thoại.
+const convIndexKey = (email) => `conv:${email}`
+const convKey = (email, id) => `conv:${email}:${id}`
+
+/** Tiêu đề rút gọn từ câu hỏi đầu tiên. */
+export function titleFromFirstMessage(messages) {
+  const first = (messages || []).find((m) => m.role === 'user')
+  const t = (first?.content || '').replace(/\s+/g, ' ').trim()
+  if (!t) return 'Hội thoại mới'
+  return t.length > 60 ? t.slice(0, 60).trimEnd() + '…' : t
+}
+
+export async function listConversations(email) {
+  const r = getRedis()
+  if (!r) return []
+  const data = await r.get(convIndexKey(email))
+  if (!data) return []
+  const list = typeof data === 'string' ? JSON.parse(data) : data
+  return Array.isArray(list) ? list.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')) : []
+}
+
+export async function getConversation(email, id) {
+  const r = getRedis()
+  if (!r) return null
+  const data = await r.get(convKey(email, id))
+  if (!data) return null
+  return typeof data === 'string' ? JSON.parse(data) : data
+}
+
+export async function saveConversation(email, id, messages, title) {
+  const r = getRedis()
+  if (!r) return null
+  const now = new Date().toISOString()
+  await r.set(convKey(email, id), JSON.stringify(messages))
+
+  const list = await listConversations(email)
+  const i = list.findIndex((c) => c.id === id)
+  const entry = {
+    id,
+    title: title || (i >= 0 ? list[i].title : titleFromFirstMessage(messages)),
+    createdAt: i >= 0 ? list[i].createdAt : now,
+    updatedAt: now,
+    count: messages.length,
+  }
+  if (i >= 0) list[i] = entry
+  else list.unshift(entry)
+
+  await r.set(convIndexKey(email), JSON.stringify(list))
+  return entry
+}
+
+export async function renameConversation(email, id, title) {
+  const r = getRedis()
+  if (!r) return false
+  const list = await listConversations(email)
+  const i = list.findIndex((c) => c.id === id)
+  if (i === -1) return false
+  list[i] = { ...list[i], title, updatedAt: new Date().toISOString() }
+  await r.set(convIndexKey(email), JSON.stringify(list))
+  return true
+}
+
+export async function deleteConversation(email, id) {
+  const r = getRedis()
+  if (!r) return false
+  await r.del(convKey(email, id))
+  const list = (await listConversations(email)).filter((c) => c.id !== id)
+  await r.set(convIndexKey(email), JSON.stringify(list))
+  return true
+}
+
+// Chat history (theo tháng — giữ lại cho tương thích, không dùng cho sidebar)
 export async function getChatHistory(userId, month) {
   const r = getRedis()
   if (!r) return []
