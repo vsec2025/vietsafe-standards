@@ -22,6 +22,10 @@ try {
   })
 } catch { console.warn('⚠️  .env.local không tìm thấy — dùng env từ shell') }
 
+// Số chiều embedding — phải khớp dimension của Upstash Vector index.
+// Gói free Upstash tối đa 1536.
+const EMBED_DIM = parseInt(process.env.VSEC_EMBED_DIM ?? '1536', 10)
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -117,11 +121,15 @@ async function checkGoogleEmbedding() {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${key}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'models/gemini-embedding-001', content: { parts: [{ text: 'test' }] } }) }
+        body: JSON.stringify({
+          model: 'models/gemini-embedding-001',
+          content: { parts: [{ text: 'test' }] },
+          outputDimensionality: EMBED_DIM,
+        }) }
     )
     const d = await res.json()
     const dims = d.embedding?.values?.length
-    return res.ok ? `✅  ${dims ?? 3072} dims OK` : `❌  ${d.error?.message}`
+    return res.ok ? `✅  ${dims ?? EMBED_DIM} chiều OK` : `❌  ${d.error?.message}`
   } catch (e) { return `❌  ${e.message}` }
 }
 
@@ -166,7 +174,7 @@ async function main() {
 
   // 3. Summary
   console.log('\n📋 Các bước còn lại:')
-  if (vecStatus.startsWith('⚠️')) console.log('   - Tạo Upstash Vector index (dim=3072, cosine) qua Vercel Marketplace')
+  if (vecStatus.startsWith('⚠️')) console.log(`   - Tạo Upstash Vector index (dimension=${EMBED_DIM}, metric=cosine)`)
   if (embedStatus.startsWith('⚠️')) console.log('   - Thêm GOOGLE_API_KEY vào .env.local')
   if (claudeStatus.startsWith('⚠️')) console.log('   - Thêm ANTHROPIC_API_KEY vào .env.local')
   console.log('   - Chạy schema/supabase.sql trong Supabase SQL Editor')

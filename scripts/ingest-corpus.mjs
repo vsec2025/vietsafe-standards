@@ -43,7 +43,10 @@ const GOOGLE_KEY = process.env.GOOGLE_API_KEY
 const VEC_URL = process.env.UPSTASH_VECTOR_REST_URL
 const VEC_TOKEN = process.env.UPSTASH_VECTOR_REST_TOKEN
 const MODEL = 'models/gemini-embedding-001'
-const EXPECTED_DIM = 3072
+// Số chiều lấy theo index (đọc từ /info) — gói free Upstash tối đa 1536.
+// Chỉ bản 3072 được model chuẩn hoá sẵn; các số chiều khác phải tự chuẩn hoá
+// L2, nếu không cosine lệch và kết quả tìm kiếm kém đi trong im lặng.
+let EMBED_DIM = parseInt(process.env.VSEC_EMBED_DIM ?? '1536', 10)
 const EMBED_BATCH = 50
 const VEC_BATCH = 100
 const RESET = process.argv.includes('--reset')
@@ -89,6 +92,13 @@ async function listExisting() {
 }
 
 // ── Embedding ───────────────────────────────────────────────────────────────
+function normalize(vec) {
+  let sum = 0
+  for (const v of vec) sum += v * v
+  const norm = Math.sqrt(sum)
+  return !norm || !isFinite(norm) ? vec : vec.map((v) => v / norm)
+}
+
 async function embedBatch(texts) {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/${MODEL}:batchEmbedContents?key=${GOOGLE_KEY}`,
@@ -96,13 +106,18 @@ async function embedBatch(texts) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        requests: texts.map((text) => ({ model: MODEL, content: { parts: [{ text }] } })),
+        requests: texts.map((text) => ({
+          model: MODEL,
+          content: { parts: [{ text }] },
+          outputDimensionality: EMBED_DIM,
+        })),
       }),
     }
   )
   if (!res.ok) throw new Error(`Embed error: ${await res.text()}`)
   const d = await res.json()
-  return d.embeddings.map((e) => e.values)
+  const vecs = d.embeddings.map((e) => e.values)
+  return EMBED_DIM === 3072 ? vecs : vecs.map(normalize)
 }
 
 const hashOf = (s) => createHash('sha256').update(s).digest('hex').slice(0, 16)
@@ -117,10 +132,25 @@ async function main() {
   })
   console.log(`   Index: ${info.vectorCount ?? 0} vectors, dim=${info.dimension ?? '?'}`)
 
-  if (info.dimension && info.dimension !== EXPECTED_DIM) {
-    console.error(`\n❌  Index dim=${info.dimension} nhưng ${MODEL} sinh ${EXPECTED_DIM} chiều.`)
-    console.error(`    Tạo lại index với dimension=${EXPECTED_DIM}, metric=cosine.`)
-    process.exit(1)
+  // Bám theo số chiều THẬT của index thay vì ép một con số cứng — tránh
+  // trường hợp đổi index (vd. xuống 1536 cho gói free) là script gãy.
+  if (info.dimension) {
+    if (info.dimension !== EMBED_DIM) {
+      console.log(`   ℹ️   Dùng ${info.dimension} chiều theo index (VSEC_EMBED_DIM=${EMBED_DIM}).`)
+      EMBED_DIM = info.dimension
+    }
+    if (EMBED_DIM < 128 || EMBED_DIM > 3072) {
+      console.error(`\n❌  ${MODEL} chỉ hỗ trợ 128–3072 chiều, index đang ${EMBED_DIM}.`)
+      process.exit(1)
+    }
+  }
+  console.log(`   Embedding: ${EMBED_DIM} chiều${EMBED_DIM === 3072 ? '' : ' (tự chuẩn hoá L2)'}`)
+
+  // Cảnh báo lệch cấu hình: webapp truy vấn bằng VSEC_EMBED_DIM, nếu khác số
+  // chiều index thì mọi truy vấn vector sẽ lỗi.
+  if (process.env.VSEC_EMBED_DIM && parseInt(process.env.VSEC_EMBED_DIM, 10) !== EMBED_DIM) {
+    console.warn(`   ⚠️   VSEC_EMBED_DIM=${process.env.VSEC_EMBED_DIM} KHÁC index (${EMBED_DIM}).`)
+    console.warn(`        Sửa biến này trên Vercel thành ${EMBED_DIM}, nếu không truy vấn sẽ lỗi.`)
   }
 
   // Đọc corpus
