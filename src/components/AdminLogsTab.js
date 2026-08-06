@@ -42,9 +42,10 @@ export default function AdminLogsTab() {
     if (only) p.set('only', only)
     if (q.trim()) p.set('q', q.trim())
     try {
-      const d = await (await fetch(`/api/admin/logs?${p}`)).json()
-      setData(d.error ? { error: d.error } : d)
-    } catch { setData({ error: 'Lỗi tải dữ liệu' }) }
+      const res = await fetch(`/api/admin/logs?${p}`)
+      const d = await res.json()
+      setData(d.error ? { error: d.error, host: d.host, status: res.status } : d)
+    } catch { setData({ error: 'Không gọi được API. Kiểm tra kết nối mạng.' }) }
     finally { setLoading(false) }
   }, [days, user, only, q])
 
@@ -102,7 +103,19 @@ export default function AdminLogsTab() {
           </div>
 
           {loading && <p className="text-sm text-vs-gray-mid py-4">Đang tải...</p>}
-          {data?.error && <p className="text-sm text-red-600 py-4">❌ {data.error}</p>}
+          {data?.error && (
+            <div className="my-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-700 font-medium">Không tải được lịch sử</p>
+              <p className="text-xs text-red-600 mt-1">{data.error}</p>
+              {data.status === 503 && (
+                <p className="text-xs text-vs-gray mt-2">
+                  Lưu ý: trong lúc Supabase không kết nối được, các lượt hỏi mới
+                  <b> không được ghi lại</b> — nên sau khi khôi phục, phần lịch sử của
+                  khoảng thời gian này sẽ trống.
+                </p>
+              )}
+            </div>
+          )}
 
           {stats && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">

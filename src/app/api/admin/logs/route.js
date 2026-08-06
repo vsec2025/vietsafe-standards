@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { getSupabase } from '@/lib/supabase'
+import { getSupabase, checkSupabase } from '@/lib/supabase'
 
 /**
  * Lịch sử hỏi–đáp của toàn bộ người dùng (chỉ admin).
@@ -23,6 +23,13 @@ export async function GET(request) {
 
   const sb = getSupabase()
   if (!sb) return NextResponse.json({ error: 'Supabase chưa cấu hình' }, { status: 500 })
+
+  // Kiểm tra kết nối trước để báo nguyên nhân cụ thể, thay vì để lỗi mạng
+  // nổi lên dưới dạng "TypeError: fetch failed" vô nghĩa với người dùng.
+  const health = await checkSupabase()
+  if (!health.ok) {
+    return NextResponse.json({ error: health.reason, host: health.host, raw: health.raw }, { status: 503 })
+  }
 
   const sp = new URL(request.url).searchParams
   const days = Math.min(365, Math.max(1, parseInt(sp.get('days') ?? '30', 10)))

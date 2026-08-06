@@ -12,12 +12,48 @@ export function getSupabase() {
   return supabase
 }
 
+/**
+ * Kiểm tra kết nối Supabase. Trả về { ok, reason } để giao diện báo nguyên
+ * nhân thật thay vì "TypeError: fetch failed".
+ *
+ * Lỗi mạng ở đây gần như luôn là một trong ba: dự án free bị tự tạm dừng sau
+ * thời gian không dùng, URL sai, hoặc project đã xoá.
+ */
+export async function checkSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!url || url === 'placeholder') return { ok: false, reason: 'NEXT_PUBLIC_SUPABASE_URL chưa cấu hình' }
+  const sb = getSupabase()
+  if (!sb) return { ok: false, reason: 'SUPABASE_SERVICE_ROLE_KEY chưa cấu hình' }
+  try {
+    const { error } = await sb.from('query_logs').select('id').limit(1)
+    if (error) return { ok: false, reason: `Supabase trả lỗi: ${error.message}`, host: url }
+    return { ok: true, host: url }
+  } catch (e) {
+    return {
+      ok: false,
+      host: url,
+      reason:
+        'Không kết nối được tới Supabase. Dự án Supabase gói free tự tạm dừng ' +
+        'sau một thời gian không hoạt động — kiểm tra Dashboard và bấm Restore/Resume.',
+      raw: e.message,
+    }
+  }
+}
+
 export async function logQuery(data) {
   const sb = getSupabase()
   if (!sb) return null
-  const { data: row, error } = await sb.from('query_logs').insert(data).select('id').single()
-  if (error) console.error('logQuery error:', error.message)
-  return row?.id ?? null
+  try {
+    const { data: row, error } = await sb.from('query_logs').insert(data).select('id').single()
+    // Ghi rõ ra log server: trước đây nơi gọi bọc .catch(() => null) nên lỗi
+    // mạng bị nuốt hoàn toàn — Supabase chết mà không ai biết, và toàn bộ
+    // lịch sử hỏi-đáp lặng lẽ không được lưu.
+    if (error) console.error('[supabase] logQuery lỗi:', error.message)
+    return row?.id ?? null
+  } catch (e) {
+    console.error('[supabase] logQuery KHÔNG kết nối được:', e.message)
+    return null
+  }
 }
 
 export async function getUserProfile(email) {
