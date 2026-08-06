@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Header from '@/components/Header'
 import ConflictsTab from '@/components/ConflictsTab'
+import AdminLogsTab from '@/components/AdminLogsTab'
 
 const ROLE_LABELS = { viewer: 'Người xem', editor: 'Biên tập', admin: 'Admin' }
 const ROLE_COLORS = { viewer: 'bg-gray-100 text-gray-600', editor: 'bg-blue-50 text-blue-700', admin: 'bg-red-50 text-vs-red' }
@@ -426,6 +427,7 @@ export default function AdminPage() {
             { key: 'conflicts', label: '⚠️ Rà soát xung đột' },
             { key: 'docs', label: 'Danh sách văn bản' },
             ...(isAdmin ? [
+              { key: 'logs', label: '🕘 Lịch sử hỏi đáp' },
               { key: 'users', label: '👥 Người dùng' },
             ] : [])
           ].map(t => (
@@ -599,6 +601,8 @@ export default function AdminPage() {
               )}
             </>
           )}
+
+          {tab === 'logs' && isAdmin && <AdminLogsTab />}
 
           {tab === 'users' && isAdmin && <UsersTab />}
         </div>

@@ -9,26 +9,42 @@ import {
   deleteConversation,
 } from '@/lib/redis'
 
-// Hội thoại luôn thuộc về người đang đăng nhập — không nhận email từ client,
-// nếu không ai cũng đọc được lịch sử chat của người khác.
+// Mặc định hội thoại thuộc về người đang đăng nhập. Chỉ admin mới được đọc
+// của người khác (tham số ?user=), phục vụ quản lý nội bộ.
 async function requireUser() {
   const session = await getServerSession(authOptions)
   return session?.user?.email || null
 }
 
-/** GET /api/conversations          -> danh sách
- *  GET /api/conversations?id=xxx   -> tin nhắn của một hội thoại */
+async function resolveOwner(request) {
+  const session = await getServerSession(authOptions)
+  const self = session?.user?.email
+  if (!self) return { error: 'Chưa đăng nhập', status: 401 }
+
+  const asUser = new URL(request.url).searchParams.get('user')
+  if (!asUser || asUser === self) return { owner: self }
+
+  if (session.user.role !== 'admin') {
+    return { error: 'Không có quyền', status: 403 }
+  }
+  return { owner: asUser.trim().toLowerCase() }
+}
+
+/** GET /api/conversations                  -> danh sách của mình
+ *  GET /api/conversations?id=xxx           -> tin nhắn của một hội thoại
+ *  GET /api/conversations?user=a@b.com     -> danh sách của người khác (admin)
+ *  GET /api/conversations?user=..&id=..    -> tin nhắn của người khác (admin) */
 export async function GET(request) {
-  const email = await requireUser()
-  if (!email) return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 })
+  const { owner, error, status } = await resolveOwner(request)
+  if (error) return NextResponse.json({ error }, { status })
 
   const id = new URL(request.url).searchParams.get('id')
   if (!id) {
-    return NextResponse.json({ conversations: await listConversations(email) })
+    return NextResponse.json({ owner, conversations: await listConversations(owner) })
   }
-  const messages = await getConversation(email, id)
+  const messages = await getConversation(owner, id)
   if (!messages) return NextResponse.json({ error: 'Không tìm thấy hội thoại' }, { status: 404 })
-  return NextResponse.json({ id, messages })
+  return NextResponse.json({ owner, id, messages })
 }
 
 /** POST -> lưu (tạo mới nếu chưa có id) */
