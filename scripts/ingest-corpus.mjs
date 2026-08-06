@@ -47,7 +47,12 @@ const MODEL = 'models/gemini-embedding-001'
 // Chỉ bản 3072 được model chuẩn hoá sẵn; các số chiều khác phải tự chuẩn hoá
 // L2, nếu không cosine lệch và kết quả tìm kiếm kém đi trong im lặng.
 let EMBED_DIM = parseInt(process.env.VSEC_EMBED_DIM ?? '1536', 10)
-const EMBED_BATCH = 50
+
+// Hạn mức Google free tier: 100 lượt embed/phút — và batchEmbedContents tính
+// MỖI VĂN BẢN là một lượt, không phải mỗi lời gọi. Gửi 50 văn bản/lần thì chỉ
+// 2 lần gọi là chạm trần. Đặt dưới 100 một chút cho an toàn.
+const RPM = parseInt(process.env.VSEC_EMBED_RPM ?? '90', 10)
+const EMBED_BATCH = Math.max(1, Math.min(50, RPM))
 const VEC_BATCH = 100
 const RESET = process.argv.includes('--reset')
 
@@ -92,6 +97,41 @@ async function listExisting() {
 }
 
 // ── Embedding ───────────────────────────────────────────────────────────────
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// Bộ điều tốc theo cửa sổ trượt 60 giây, đếm theo SỐ VĂN BẢN đã gửi.
+const sentAt = []
+async function throttle(n) {
+  for (;;) {
+    const now = Date.now()
+    while (sentAt.length && now - sentAt[0] > 60_000) sentAt.shift()
+    if (sentAt.length + n <= RPM) break
+    const wait = 60_000 - (now - sentAt[0]) + 300
+    process.stdout.write(`\r   ⏳ Chờ hạn mức Google ${Math.ceil(wait / 1000)}s...                    `)
+    await sleep(wait)
+  }
+  const t = Date.now()
+  for (let i = 0; i < n; i++) sentAt.push(t)
+}
+
+/** Gọi embed có thử lại: 429 thì chờ đúng khoảng Google yêu cầu rồi làm lại. */
+async function embedBatchSafe(texts, attempt = 0) {
+  await throttle(texts.length)
+  try {
+    return await embedBatch(texts)
+  } catch (e) {
+    const msg = String(e.message || '')
+    const is429 = /429|RESOURCE_EXHAUSTED/.test(msg)
+    if (!is429 || attempt >= 6) throw e
+    const m = /retryDelay[^0-9]*([0-9.]+)s/.exec(msg)
+    const wait = Math.ceil((m ? parseFloat(m[1]) : 60) * 1000) + 1500
+    process.stdout.write(`\r   ⏳ Vượt hạn mức, chờ ${Math.ceil(wait / 1000)}s rồi thử lại...        `)
+    await sleep(wait)
+    sentAt.length = 0 // cửa sổ cũ không còn ý nghĩa sau khi chờ
+    return embedBatchSafe(texts, attempt + 1)
+  }
+}
+
 function normalize(vec) {
   let sum = 0
   for (const v of vec) sum += v * v
@@ -130,7 +170,10 @@ async function main() {
     console.error(`❌  Không kết nối được Upstash Vector: ${e.message}`)
     process.exit(1)
   })
-  console.log(`   Index: ${info.vectorCount ?? 0} vectors, dim=${info.dimension ?? '?'}`)
+  const dimLabel = info.dimension
+    ? `${info.dimension} chiều`
+    : `chưa xác định (index rỗng) — dùng VSEC_EMBED_DIM=${EMBED_DIM}`
+  console.log(`   Index: ${info.vectorCount ?? 0} vectors, ${dimLabel}`)
 
   // Bám theo số chiều THẬT của index thay vì ép một con số cứng — tránh
   // trường hợp đổi index (vd. xuống 1536 cho gói free) là script gãy.
@@ -205,10 +248,17 @@ async function main() {
   if (toDelete.length) console.log(`   ✅  Đã xoá ${toDelete.length} vector mồ côi`)
 
   // Embed + upsert
+  if (toUpsert.length > RPM) {
+    const mins = Math.ceil(toUpsert.length / RPM)
+    console.log(`   ⏱  Hạn mức ${RPM} văn bản/phút → dự kiến ~${mins} phút.`)
+    console.log(`      Ngắt giữa chừng cũng không sao: chạy lại sẽ tiếp tục từ chỗ dở.\n`)
+  }
+
+  const t0 = Date.now()
   let done = 0
   for (let i = 0; i < toUpsert.length; i += EMBED_BATCH) {
     const batch = toUpsert.slice(i, i + EMBED_BATCH)
-    const vectors = await embedBatch(batch.map((b) => b.text))
+    const vectors = await embedBatchSafe(batch.map((b) => b.text))
 
     const items = batch.map((b, j) => ({
       id: b.id,
@@ -231,7 +281,12 @@ async function main() {
       await vec('/upsert', items.slice(k, k + VEC_BATCH))
     }
     done += batch.length
-    process.stdout.write(`\r   Embedding: ${done}/${toUpsert.length}`)
+    const elapsed = (Date.now() - t0) / 1000
+    const left = done ? Math.ceil((elapsed / done) * (toUpsert.length - done)) : 0
+    process.stdout.write(
+      `\r   Đã nạp ${done}/${toUpsert.length}` +
+      (left > 0 ? ` — còn ~${Math.ceil(left / 60)} phút          ` : '                    ')
+    )
   }
   if (toUpsert.length) console.log()
 
