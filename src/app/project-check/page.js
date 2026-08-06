@@ -65,6 +65,30 @@ export default function ProjectCheckPage() {
 
   if (status === 'loading' || !session) return null
 
+  // Tạm tắt để tập trung vào tra cứu bằng AI. Phần còn lại của trang giữ
+  // nguyên — bật lại bằng cách xoá khối này, bỏ comment mode 'project' trong
+  // ChatPanel.js, nút ở Header.js, và đặt VSEC_ENABLE_PROJECT=1 trên server.
+  if (process.env.NEXT_PUBLIC_ENABLE_PROJECT !== '1') {
+    return (
+      <div className="min-h-screen bg-vs-gray-light">
+        <Header />
+        <div className="max-w-lg mx-auto mt-20 bg-white rounded-xl shadow p-8 text-center">
+          <div className="text-3xl mb-3">🚧</div>
+          <h1 className="text-lg font-bold text-vs-dark font-montserrat mb-2">
+            Kiểm tra dự án đang tạm tắt
+          </h1>
+          <p className="text-sm text-vs-gray-mid leading-relaxed">
+            Chúng tôi đang tập trung hoàn thiện phần tra cứu quy chuẩn bằng AI.
+            Chức năng đối chiếu hồ sơ dự án sẽ trở lại sau.
+          </p>
+          <button onClick={() => router.push('/dashboard')} className="vs-btn-primary mt-5">
+            Sang trang tra cứu
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const summary = result?.summary
   const scorePercent = summary
     ? Math.round((summary.compliant / summary.total) * 100)

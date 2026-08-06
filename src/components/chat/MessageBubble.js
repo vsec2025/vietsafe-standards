@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import CitationChips from './CitationChips'
 import SourcesUsedList from './SourcesUsedList'
+import SourcePanel from './SourcePanel'
 
 const CITE_RE = /\[(\d{1,2})\]/g
 
@@ -13,7 +14,7 @@ const CITE_RE = /\[(\d{1,2})\]/g
  * Làm ở tầng render thay vì cho model xuất HTML: nội dung model trả về được
  * coi là dữ liệu, không phải mã — tránh chèn HTML tuỳ ý vào trang.
  */
-function withCitations(children, sources) {
+function withCitations(children, sources, onCite, activeIdx) {
   const arr = Array.isArray(children) ? children : [children]
   return arr.flatMap((child, ci) => {
     if (typeof child !== 'string') return [child]
@@ -24,17 +25,17 @@ function withCitations(children, sources) {
       const s = sources?.[n - 1]
       if (m.index > last) out.push(child.slice(last, m.index))
       out.push(
-        s?.doc_slug && s?.anchor ? (
-          <a
+        s ? (
+          <button
             key={`${ci}-${m.index}`}
-            href={`/van-ban/${s.doc_slug}#${encodeURIComponent(s.anchor)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={[s.van_ban, s.don_vi].filter(Boolean).join(' · ')}
-            className="align-super text-[9px] font-bold text-vs-red hover:underline mx-px"
+            onClick={() => onCite?.(n - 1)}
+            title={`Xem ${[s.van_ban, s.don_vi].filter(Boolean).join(' · ')}`}
+            className={`align-super text-[9px] font-bold mx-px px-0.5 rounded transition ${
+              activeIdx === n - 1 ? 'bg-vs-red text-white' : 'text-vs-red hover:bg-red-100'
+            }`}
           >
             {n}
-          </a>
+          </button>
         ) : (
           <sup key={`${ci}-${m.index}`} className="text-[9px] font-bold text-vs-red mx-px">{n}</sup>
         )
@@ -63,8 +64,11 @@ function IconBtn({ title, onClick, active, children, disabled }) {
 
 export default function MessageBubble({ msg, onFeedback, onRegenerate, feedbackSent }) {
   const [copied, setCopied] = useState(false)
+  const [expanded, setExpanded] = useState(null) // chỉ số nguồn đang mở
   const isUser = msg.role === 'user'
   const sources = msg.sources || []
+
+  const toggle = (i) => setExpanded((cur) => (cur === i ? null : i))
 
   async function copy() {
     try {
@@ -85,7 +89,9 @@ export default function MessageBubble({ msg, onFeedback, onRegenerate, feedbackS
   }
 
   // Bọc các thẻ có thể chứa trích dẫn để chèn số mũ
-  const cite = (Tag) => ({ children, ...p }) => <Tag {...p}>{withCitations(children, sources)}</Tag>
+  const cite = (Tag) => ({ children, ...p }) => (
+    <Tag {...p}>{withCitations(children, sources, toggle, expanded)}</Tag>
+  )
   const mdComponents = {
     p: cite('p'),
     li: cite('li'),
@@ -104,7 +110,9 @@ export default function MessageBubble({ msg, onFeedback, onRegenerate, feedbackS
     ),
   }
   mdComponents.td = ({ children, ...p }) => (
-    <td {...p} className="border border-gray-200 px-2 py-1 align-top">{withCitations(children, sources)}</td>
+    <td {...p} className="border border-gray-200 px-2 py-1 align-top">
+      {withCitations(children, sources, toggle, expanded)}
+    </td>
   )
 
   return (
@@ -129,8 +137,15 @@ export default function MessageBubble({ msg, onFeedback, onRegenerate, feedbackS
         </ReactMarkdown>
       </div>
 
+      {/* Điều khoản mở ngay tại đây, không chuyển tab */}
+      <SourcePanel
+        source={expanded !== null ? sources[expanded] : null}
+        index={expanded ?? 0}
+        onClose={() => setExpanded(null)}
+      />
+
       <SourcesUsedList sources={sources} />
-      <CitationChips sources={sources} />
+      <CitationChips sources={sources} activeIdx={expanded} onSelect={toggle} />
 
       <div className="mt-2 pt-1.5 flex items-center gap-1">
         <IconBtn title={copied ? 'Đã sao chép' : 'Sao chép'} onClick={copy} active={copied}>

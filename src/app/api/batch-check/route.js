@@ -7,6 +7,11 @@ import { extractText } from '@/lib/claude'
 
 const MODEL = process.env.VSEC_DEFAULT_MODEL ?? 'claude-sonnet-5'
 
+// Kiểm tra dự án tạm tắt để tập trung vào tra cứu bằng AI.
+// Bật lại: đặt VSEC_ENABLE_PROJECT=1 và bỏ comment mục 'project' trong
+// MODES ở src/components/ChatPanel.js
+const PROJECT_ENABLED = process.env.VSEC_ENABLE_PROJECT === '1'
+
 const SYSTEM_BATCH = `Bạn là chuyên gia kiểm tra sự tuân thủ tiêu chuẩn PCCC Việt Nam của Công ty VIETSAFE E&C.
 
 Nhiệm vụ: Đánh giá đoạn văn bản tài liệu dự án xem có tuân thủ các quy định PCCC hiện hành không.
@@ -58,6 +63,15 @@ export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user) return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 })
+
+    // Chặn ở server, không chỉ ẩn giao diện — client cũ hoặc gọi API trực tiếp
+    // vẫn không dùng được chức năng đang tắt.
+    if (!PROJECT_ENABLED) {
+      return NextResponse.json(
+        { error: 'Chức năng Kiểm tra dự án đang tạm tắt.' },
+        { status: 400 }
+      )
+    }
 
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey || apiKey === 'placeholder') return NextResponse.json({ error: 'Chưa cấu hình API key' }, { status: 500 })

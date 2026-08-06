@@ -12,8 +12,10 @@ const MODES = [
   // Bật lại: bỏ comment dòng dưới VÀ đặt VSEC_ENABLE_INTL_COMPARE=1 trên server.
   // { key: 'intl_compare', label: 'Đối chiếu QT', desc: 'So sánh với NFPA, ISO, EN', icon: '🌐',
   //   placeholder: 'Mô tả vấn đề cần đối chiếu Việt Nam – quốc tế...' },
-  { key: 'project', label: 'Dự án', desc: 'Kiểm tra tài liệu dự án với tiêu chuẩn', icon: '📋',
-    placeholder: 'Mô tả hạng mục dự án cần đối chiếu với quy chuẩn...' },
+  // Tạm tắt để tập trung vào tra cứu bằng AI. Bật lại: bỏ comment dòng dưới
+  // VÀ đặt VSEC_ENABLE_PROJECT=1 trên server (chốt chặn nằm ở /api/batch-check).
+  // { key: 'project', label: 'Dự án', desc: 'Kiểm tra tài liệu dự án với tiêu chuẩn', icon: '📋',
+  //   placeholder: 'Mô tả hạng mục dự án cần đối chiếu với quy chuẩn...' },
 ]
 
 const SUGGESTIONS = [

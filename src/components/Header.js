@@ -35,10 +35,13 @@ export default function Header() {
             className="text-xs px-3 py-1.5 text-vs-gray-mid hover:text-vs-red hover:bg-red-50 rounded transition">
             💬 Hỏi đáp
           </button>
+          {/* Kiểm tra dự án tạm tắt — tập trung vào tra cứu bằng AI.
+              Bật lại: bỏ comment ở đây, bỏ comment mode 'project' trong
+              ChatPanel.js, và đặt VSEC_ENABLE_PROJECT=1 trên server.
           <button onClick={() => router.push('/project-check')}
             className="text-xs px-3 py-1.5 text-vs-gray-mid hover:text-vs-red hover:bg-red-50 rounded transition">
             📋 Kiểm tra dự án
-          </button>
+          </button> */}
           {['admin', 'editor'].includes(session?.user?.role) && (
             <button onClick={() => router.push('/newsletter')}
               className="text-xs px-3 py-1.5 text-vs-gray-mid hover:text-vs-red hover:bg-red-50 rounded transition">

@@ -145,17 +145,25 @@ export async function POST(request) {
     const inputTokens = aiData.usage?.input_tokens ?? 0
     const outputTokens = aiData.usage?.output_tokens ?? 0
 
-    // doc_slug + anchor để chip nguồn mở thẳng đúng điều khoản trong trang đọc
-    const citations = activeChunks.map((r) => ({
-      id: r.id,
-      doc_slug: r.doc_slug || '',
-      anchor: anchorOf(r),
-      don_vi: r.don_vi || '',
-      van_ban: r.van_ban || r.so_hieu || r.loai || '',
-      tieu_de: r.tieu_de || '',
-      label: [r.van_ban || r.so_hieu || r.loai, r.don_vi, r.tieu_de].filter(Boolean).join(' — '),
-      score: r.score,
-    }))
+    // Kèm luôn nội dung điều khoản để giao diện mở ngay bên dưới câu trả lời,
+    // không phải rời trang hay gọi thêm API. Cắt bớt để không phình payload —
+    // muốn đọc trọn thì có liên kết sang trang đọc.
+    const EXCERPT = 1400
+    const citations = activeChunks.map((r) => {
+      const full = r.content || r.text || ''
+      return {
+        id: r.id,
+        doc_slug: r.doc_slug || '',
+        anchor: anchorOf(r),
+        don_vi: r.don_vi || '',
+        van_ban: r.van_ban || r.so_hieu || r.loai || '',
+        tieu_de: r.tieu_de || '',
+        label: [r.van_ban || r.so_hieu || r.loai, r.don_vi, r.tieu_de].filter(Boolean).join(' — '),
+        excerpt: full.slice(0, EXCERPT),
+        truncated: full.length > EXCERPT,
+        score: r.score,
+      }
+    })
 
     const [logId] = await Promise.all([
       logQuery({
