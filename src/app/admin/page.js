@@ -296,6 +296,15 @@ export default function AdminPage() {
     const file = fileRef.current?.files?.[0]
     if (!file) return setErrorMsg('Chọn file .md trước')
     if (!file.name.endsWith('.md')) return setErrorMsg('Chỉ chấp nhận file .md')
+    // Vercel chặn body > 4,5 MB trước khi tới hàm, trình duyệt chỉ báo
+    // "Failed to fetch" — kiểm tra tại chỗ để nói rõ lý do.
+    const MAX_MB = 4
+    if (file.size > MAX_MB * 1024 * 1024) {
+      return setErrorMsg(
+        `File ${(file.size / 1024 / 1024).toFixed(1)} MB — vượt giới hạn ${MAX_MB} MB. ` +
+        `Hãy tách văn bản thành nhiều phần (theo chương/phần) rồi upload lần lượt.`
+      )
+    }
 
     resetProgress()
     setUploading(true)
@@ -326,8 +335,14 @@ export default function AdminPage() {
       startPipelinePolling()
 
     } catch (err) {
-      updateStep('upload', 'error', 'Lỗi: ' + err.message)
-      setErrorMsg(err.message)
+      // "Failed to fetch" = request không tới được server. Với upload thì
+      // gần như luôn là file quá lớn hoặc mạng đứt giữa chừng.
+      const msg = /failed to fetch|networkerror|load failed/i.test(err.message)
+        ? `Không gửi được file lên máy chủ (${(file.size / 1024 / 1024).toFixed(1)} MB). ` +
+          'Thường do file quá lớn hoặc mạng gián đoạn — thử lại, hoặc tách nhỏ văn bản.'
+        : err.message
+      updateStep('upload', 'error', msg)
+      setErrorMsg(msg)
       setUploading(false)
     }
   }

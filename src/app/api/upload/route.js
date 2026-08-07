@@ -2,6 +2,14 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 
+// Base64 làm phình nội dung ~33% khi gửi lên GitHub, cộng thêm thời gian gọi
+// API — cho hàm nhiều thời gian hơn mặc định để file lớn không bị cắt ngang.
+export const maxDuration = 60
+
+// Vercel chặn request body quá 4,5 MB ở tầng hạ tầng: hàm không hề được gọi
+// và trình duyệt chỉ thấy "Failed to fetch". Chặn sớm với thông báo rõ ràng.
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
+
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -13,6 +21,13 @@ export async function POST(request) {
     const file = formData.get('file')
     if (!file || !file.name.endsWith('.md')) {
       return NextResponse.json({ error: 'Chỉ chấp nhận file .md' }, { status: 400 })
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      const mb = (file.size / 1024 / 1024).toFixed(1)
+      return NextResponse.json(
+        { error: `File ${mb} MB — vượt giới hạn 4 MB của Vercel. Hãy tách văn bản thành nhiều phần rồi upload lần lượt.` },
+        { status: 413 }
+      )
     }
 
     const content = await file.text()
