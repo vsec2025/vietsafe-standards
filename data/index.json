@@ -1,6 +1,6 @@
 {
-  "last_updated": "2026-08-07T14:02:10Z",
-  "total_chunks": 2991,
+  "last_updated": "2026-08-07T14:14:19Z",
+  "total_chunks": 3026,
   "van_ban": [
     {
       "so_hieu": "11 TCN-18:2006",
@@ -51,6 +51,11 @@
       "so_hieu": "TCVN 7336:2021",
       "chunks": 142,
       "tokens": 38372
+    },
+    {
+      "so_hieu": "TCVN 7435-1:2004",
+      "chunks": 35,
+      "tokens": 5470
     },
     {
       "so_hieu": "TCVN 7568-14:2025",
