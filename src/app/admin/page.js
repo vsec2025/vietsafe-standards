@@ -143,8 +143,8 @@ function UsersTab() {
               <th className="pb-2 pr-4 font-medium">Tên</th>
               <th className="pb-2 pr-4 font-medium">Role</th>
               <th className="pb-2 pr-4 font-medium">Đăng nhập</th>
-              <th className="pb-2 pr-4 font-medium">Token dùng / hạn mức</th>
-              <th className="pb-2 pr-4 font-medium">Quota</th>
+              <th className="pb-2 pr-4 font-medium">Hôm nay / hạn mức</th>
+              <th className="pb-2 pr-4 font-medium">Hạn mức ₫/ngày</th>
               <th className="pb-2 font-medium"></th>
             </tr>
           </thead>
@@ -174,11 +174,12 @@ function UsersTab() {
                 <td className="py-2.5 pr-4">
                   <div className="flex items-center gap-2">
                     <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-vs-red rounded-full"
-                        style={{ width: `${Math.min(100, (u.token_used / u.token_quota) * 100)}%` }} />
+                      <div className={`h-full rounded-full ${u.blocked ? 'bg-red-600' : 'bg-vs-red'}`}
+                        style={{ width: `${Math.min(100, ((u.spent_vnd || 0) / (u.budget_vnd || 1)) * 100)}%` }} />
                     </div>
-                    <span className="text-vs-gray-mid">
-                      {(u.token_used || 0).toLocaleString()} / {(u.token_quota || 50000).toLocaleString()}
+                    <span className={u.blocked ? 'text-red-600 font-medium' : 'text-vs-gray-mid'}>
+                      {(u.spent_vnd || 0).toLocaleString('vi-VN')} / {(u.budget_vnd || 0).toLocaleString('vi-VN')} ₫
+                      {u.blocked && ' — đã khoá'}
                     </span>
                   </div>
                 </td>
@@ -186,17 +187,26 @@ function UsersTab() {
                   <div className="flex items-center gap-1">
                     <input
                       type="number"
-                      value={quotaEdit[u.email] ?? u.token_quota ?? 50000}
+                      value={quotaEdit[u.email] ?? u.budget_vnd ?? 5000}
                       onChange={e => setQuotaEdit(prev => ({ ...prev, [u.email]: e.target.value }))}
                       className="w-20 text-xs border border-gray-200 rounded px-1.5 py-0.5"
-                      min="0" step="10000"
+                      min="0" step="1000"
                     />
                     <button
-                      onClick={() => patch(u.email, { token_quota: quotaEdit[u.email] ?? u.token_quota })}
+                      onClick={() => patch(u.email, { budget_vnd: quotaEdit[u.email] ?? u.budget_vnd })}
                       disabled={saving[u.email]}
+                      title="Lưu hạn mức mỗi ngày (VND)"
                       className="text-xs px-2 py-0.5 bg-vs-red text-white rounded hover:opacity-90 disabled:opacity-50"
                     >
                       {saving[u.email] ? '...' : 'Lưu'}
+                    </button>
+                    <button
+                      onClick={() => patch(u.email, { action: 'reset_quota' })}
+                      disabled={saving[u.email]}
+                      title="Đặt lại: bỏ qua phần đã tiêu hôm nay, cho dùng tiếp ngay"
+                      className="text-xs px-2 py-0.5 text-vs-red border border-vs-red rounded hover:bg-red-50 disabled:opacity-50 whitespace-nowrap"
+                    >
+                      Reset
                     </button>
                   </div>
                 </td>

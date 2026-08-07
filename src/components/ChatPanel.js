@@ -37,6 +37,7 @@ export default function ChatPanel({ conversationId, onConversationSaved, onNewCo
   const [loading, setLoading] = useState(false)
   const [feedbackSent, setFeedbackSent] = useState({})
   const [showAbout, setShowAbout] = useState(false)
+  const [quota, setQuota] = useState(null) // { spent, budget } VND hôm nay
   const endRef = useRef(null)
   const inputRef = useRef(null)
   const convRef = useRef(conversationId || null)
@@ -107,7 +108,9 @@ export default function ChatPanel({ conversationId, onConversationSaved, onNewCo
             has_basis: data.has_basis,
             model_used: data.model_used,
             log_id: data.log_id,
+            cost_vnd: data.cost_vnd,
           }
+      if (data.quota) setQuota(data.quota)
       const next = [...history, reply]
       setMessages(next)
       if (!data.error) persist(next)
@@ -251,6 +254,14 @@ export default function ChatPanel({ conversationId, onConversationSaved, onNewCo
         <p className="max-w-3xl mx-auto mt-1.5 text-[10px] italic text-vs-gray-mid text-center">
           Trợ lý PCCC chỉ là điểm khởi đầu tra cứu. Vui lòng kiểm tra lại với văn bản gốc trước khi áp dụng.
         </p>
+        {quota && (
+          <p className="max-w-3xl mx-auto mt-1 text-[10px] text-center text-vs-gray-mid">
+            Hôm nay đã dùng{' '}
+            <b className={quota.spent >= quota.budget ? 'text-vs-red' : 'text-vs-gray'}>
+              {quota.spent.toLocaleString('vi-VN')} ₫
+            </b>{' '}/ {quota.budget.toLocaleString('vi-VN')} ₫ · đặt lại lúc 0h
+          </p>
+        )}
       </div>
 
       {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}

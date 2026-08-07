@@ -50,3 +50,13 @@ begin
         updated_at = now();
 end;
 $$;
+
+-- ── Hạn mức theo NGÀY tính bằng VND (thay cho token_quota cộng dồn) ─────────
+-- Chi tiêu được tính trực tiếp từ query_logs nên tự reset mỗi ngày; ở đây chỉ
+-- lưu hạn mức và mốc "admin bấm Reset".
+alter table user_profiles add column if not exists daily_budget_vnd int default 5000;
+alter table user_profiles add column if not exists quota_reset_at  timestamptz;
+
+-- Truy vấn hạn mức lọc theo (email, created_at) nên cần chỉ mục ghép
+create index if not exists query_logs_email_created_idx
+  on query_logs(user_email, created_at desc);

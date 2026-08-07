@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getAllUsers, getUser, setUser, deleteUser } from '@/lib/redis'
-import { getSupabase, updateUserQuota } from '@/lib/supabase'
+import { getDailyUsage, resetDailyQuota, updateDailyBudget } from '@/lib/supabase'
+import { DEFAULT_DAILY_BUDGET_VND } from '@/lib/pricing'
 import { normalizeEmail } from '@/lib/auth'
 import { hash } from 'bcryptjs'
 
@@ -17,25 +18,27 @@ export async function GET() {
   // Redis: auth users (role, name, email)
   const redisUsers = await getAllUsers()
 
-  // Supabase: token usage per email
-  const sb = getSupabase()
-  let quotaMap = {}
-  if (sb) {
-    const { data } = await sb.from('user_profiles').select('email, token_used, token_quota')
-    if (data) data.forEach(r => { quotaMap[r.email] = r })
-  }
+  // Chi tiêu hôm nay (VND) tính từ query_logs cho từng người
+  const usages = await Promise.all(
+    redisUsers.map((u) => getDailyUsage(u.email).then((d) => [u.email, d]))
+  )
+  const usageMap = Object.fromEntries(usages)
 
-  const users = redisUsers.map(u => ({
-    email: u.email,
-    full_name: u.name,
-    role: u.role,
-    has_password: Boolean(u.hasPassword),
-    token_used: quotaMap[u.email]?.token_used ?? 0,
-    token_quota: quotaMap[u.email]?.token_quota ?? 50000,
-    created_at: u.createdAt,
-  }))
+  const users = redisUsers.map((u) => {
+    const d = usageMap[u.email] || {}
+    return {
+      email: u.email,
+      full_name: u.name,
+      role: u.role,
+      has_password: Boolean(u.hasPassword),
+      created_at: u.createdAt,
+      spent_vnd: Math.round(d.spent ?? 0),
+      budget_vnd: d.budget ?? DEFAULT_DAILY_BUDGET_VND,
+      blocked: Boolean(d.blocked),
+    }
+  })
 
-  return NextResponse.json({ users })
+  return NextResponse.json({ users, default_budget_vnd: DEFAULT_DAILY_BUDGET_VND })
 }
 
 export async function PATCH(request) {
@@ -44,7 +47,7 @@ export async function PATCH(request) {
 
   const body = await request.json()
   const email = normalizeEmail(body.email)
-  const { role, token_quota } = body
+  const { role } = body
   if (!email) return NextResponse.json({ error: 'Thiếu email' }, { status: 400 })
 
   if (role !== undefined) {
@@ -56,10 +59,17 @@ export async function PATCH(request) {
     await setUser(email, { ...user, role })
   }
 
-  if (token_quota !== undefined) {
-    const q = parseInt(token_quota, 10)
-    if (isNaN(q) || q < 0) return NextResponse.json({ error: 'Quota không hợp lệ' }, { status: 400 })
-    await updateUserQuota(email, q)
+  // Đặt lại hạn mức hôm nay: bỏ qua phần đã tiêu, không xoá log
+  if (body.action === 'reset_quota') {
+    const ok = await resetDailyQuota(email)
+    if (!ok) return NextResponse.json({ error: 'Không ghi được vào Supabase' }, { status: 503 })
+  }
+
+  if (body.budget_vnd !== undefined) {
+    const v = parseInt(body.budget_vnd, 10)
+    if (isNaN(v) || v < 0) return NextResponse.json({ error: 'Hạn mức không hợp lệ' }, { status: 400 })
+    const ok = await updateDailyBudget(email, v)
+    if (!ok) return NextResponse.json({ error: 'Không ghi được vào Supabase' }, { status: 503 })
   }
 
   return NextResponse.json({ ok: true })

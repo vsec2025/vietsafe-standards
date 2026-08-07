@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { hybridSearch } from '@/lib/hybrid-search'
-import { logQuery, getUserProfile, upsertUserProfile, incrementTokenUsage } from '@/lib/supabase'
+import { logQuery, getDailyUsage, upsertUserProfile, incrementTokenUsage } from '@/lib/supabase'
+import { formatVnd, costVnd } from '@/lib/pricing'
 import { callClaude } from '@/lib/claude'
 import { anchorOf } from '@/lib/documents'
 
@@ -77,17 +78,20 @@ export async function POST(request) {
       )
     }
 
-    // Kiểm tra token quota (nếu Supabase được cấu hình)
-    const profile = await getUserProfile(session.user.email)
-    if (profile && profile.token_used >= profile.token_quota) {
+    // Hạn mức chi tiêu theo NGÀY (VND). Nếu Supabase không đọc được thì
+    // usage.ok = false và ta cho đi tiếp — không khoá người dùng chỉ vì hệ
+    // thống ghi log đang hỏng.
+    const usage = await getDailyUsage(session.user.email)
+    if (usage.blocked) {
       return NextResponse.json(
-        { error: 'Đã đạt hạn mức token tháng này. Liên hệ admin để nâng hạn mức.' },
+        {
+          error: `Đã dùng hết hạn mức ${formatVnd(usage.budget)}/ngày. Hạn mức đặt lại vào 0h, hoặc liên hệ admin.`,
+          usage: { spent: Math.round(usage.spent), budget: usage.budget },
+        },
         { status: 429 }
       )
     }
-    if (!profile) {
-      upsertUserProfile(session.user.email, session.user.name).catch(() => {})
-    }
+    upsertUserProfile(session.user.email, session.user.name).catch(() => {})
 
     const startTime = Date.now()
     const topK = parseInt(process.env.VSEC_TOP_K ?? '8', 10)
@@ -181,12 +185,19 @@ export async function POST(request) {
       incrementTokenUsage(session.user.email, inputTokens, outputTokens).catch(() => {}),
     ])
 
+    const costThisTurn = costVnd(model, inputTokens, outputTokens)
+
     return NextResponse.json({
       reply,
       has_basis,
       model_used: model,
       sources: citations,
       token_usage: { input: inputTokens, output: outputTokens },
+      // Chi phí lượt này + hạn mức còn lại, để giao diện hiện cho người dùng
+      cost_vnd: Math.round(costThisTurn),
+      quota: usage.ok
+        ? { spent: Math.round(usage.spent + costThisTurn), budget: usage.budget }
+        : null,
       log_id: logId,
     })
   } catch (err) {
