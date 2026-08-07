@@ -254,13 +254,24 @@ export default function ChatPanel({ conversationId, onConversationSaved, onNewCo
         <p className="max-w-3xl mx-auto mt-1.5 text-[10px] italic text-vs-gray-mid text-center">
           Trợ lý PCCC chỉ là điểm khởi đầu tra cứu. Vui lòng kiểm tra lại với văn bản gốc trước khi áp dụng.
         </p>
-        {quota && (
-          <p className="max-w-3xl mx-auto mt-1 text-[10px] text-center text-vs-gray-mid">
-            Hôm nay đã dùng{' '}
-            <b className={quota.spent >= quota.budget ? 'text-vs-red' : 'text-vs-gray'}>
-              {quota.spent.toLocaleString('vi-VN')} ₫
-            </b>{' '}/ {quota.budget.toLocaleString('vi-VN')} ₫ · đặt lại lúc 0h
-          </p>
+        {/* Mức sử dụng hôm nay — chỉ là thanh nhỏ, không hiện số tiền.
+            Người dùng biết mình đang dùng nhiều hay ít mà không phải nghĩ
+            đến chi phí trong lúc tra cứu. */}
+        {quota?.budget > 0 && (
+          <div className="max-w-3xl mx-auto mt-2" title="Mức sử dụng hôm nay">
+            <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  quota.spent >= quota.budget
+                    ? 'bg-vs-red'
+                    : quota.spent / quota.budget > 0.8
+                    ? 'bg-amber-400'
+                    : 'bg-vs-red/40'
+                }`}
+                style={{ width: `${Math.min(100, (quota.spent / quota.budget) * 100)}%` }}
+              />
+            </div>
+          </div>
         )}
       </div>
 
