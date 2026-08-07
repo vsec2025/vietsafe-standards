@@ -45,7 +45,7 @@ export async function POST(request) {
       `[${c.id}] ${(c.van_ban || c.loai || '')} | ${(c.don_vi || '')} ${(c.tieu_de || '')}: ${(c.content || '').slice(0, 150)}`
     ).join('\n---\n')
 
-    // Ask Haiku to find conflicts
+    // Nhờ Claude tìm xung đột
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -54,7 +54,7 @@ export async function POST(request) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: process.env.VSEC_DEFAULT_MODEL ?? 'claude-sonnet-5',
         max_tokens: 8000,
         system: `Bạn là chuyên gia pháp luật PCCC Việt Nam. Nhiệm vụ: so sánh văn bản MỚI với các văn bản CŨ, tìm các điều khoản CŨ bị thay thế, sửa đổi, hoặc bãi bỏ bởi văn bản mới.
 

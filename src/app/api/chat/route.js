@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { hybridSearch } from '@/lib/hybrid-search'
+import { multiHybridSearch } from '@/lib/hybrid-search'
+import { expandQuery } from '@/lib/query-expand'
 import { logQuery, getDailyUsage, upsertUserProfile, incrementTokenUsage } from '@/lib/supabase'
 import { formatVnd, costVnd } from '@/lib/pricing'
 import { callClaude } from '@/lib/claude'
@@ -94,8 +95,17 @@ export async function POST(request) {
     upsertUserProfile(session.user.email, session.user.name).catch(() => {})
 
     const startTime = Date.now()
-    const topK = parseInt(process.env.VSEC_TOP_K ?? '8', 10)
-    const chunks = await hybridSearch(message, { topK, mode })
+
+    // topK=8 là con số từ thời chunk còn cả trang (~920 token). Sau khi cắt
+    // theo điều khoản, chunk trung bình còn ~230 token, nên 8 chunk chỉ còn
+    // ~1.800 token ngữ cảnh — quá ít để tổng hợp. 20 đưa về mức cũ.
+    const topK = parseInt(process.env.VSEC_TOP_K ?? '20', 10)
+
+    // Tách câu hỏi thành các truy vấn con rồi tìm riêng từng cái. Một câu hỏi
+    // dạng quy trình cần nhiều mảnh khác nhau, mà nhúng một truy vấn chỉ kéo
+    // về những đoạn na ná câu hỏi.
+    const { queries, usage: expandUsage } = await expandQuery(message, apiKey)
+    const chunks = await multiHybridSearch(queries, { topK, mode })
     const activeChunks = chunks.filter((r) => !r._superseded)
 
     const context = activeChunks
@@ -146,8 +156,11 @@ export async function POST(request) {
     const reply = rawReply.replace(/HAS_BASIS:\s*(true|false)/i, '').trim()
 
     const latency_ms = Date.now() - startTime
-    const inputTokens = aiData.usage?.input_tokens ?? 0
-    const outputTokens = aiData.usage?.output_tokens ?? 0
+
+    // Gộp cả token của bước tách câu hỏi: nó cũng gọi Claude và cũng tính tiền,
+    // bỏ qua thì hạn mức ngày đếm thiếu so với hoá đơn thật.
+    const inputTokens = (aiData.usage?.input_tokens ?? 0) + expandUsage.input
+    const outputTokens = (aiData.usage?.output_tokens ?? 0) + expandUsage.output
 
     // Kèm luôn nội dung điều khoản để giao diện mở ngay bên dưới câu trả lời,
     // không phải rời trang hay gọi thêm API. Cắt bớt để không phình payload —

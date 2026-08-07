@@ -45,12 +45,14 @@ export async function hybridSearch(query, { topK = 6, mode = 'vn_only' } = {}) {
     const vecMeta = vecMap.get(id)?.meta
 
     merged.push({
+      // Trải chunk gốc TRƯỚC: nó mang theo `score` BM25 thô (chưa chuẩn hoá) và
+      // sẽ ghi đè `combined` nếu đặt sau, khiến mọi kết quả BM25 xếp trên mọi
+      // kết quả vector và phần vector coi như vô hiệu.
+      ...(bm25Chunk ?? {}),
       id,
       score: combined,
       bm25_score: bm25,
       vector_score: vec,
-      // Ưu tiên dữ liệu từ BM25 chunk (có đầy đủ fields gốc), fallback vector metadata
-      ...(bm25Chunk ?? {}),
       content: bm25Chunk?.content ?? bm25Chunk?.text ?? vecMeta?.content ?? '',
       loai: bm25Chunk?.loai ?? vecMeta?.loai,
       don_vi: bm25Chunk?.don_vi ?? vecMeta?.don_vi,
@@ -61,4 +63,53 @@ export async function hybridSearch(query, { topK = 6, mode = 'vn_only' } = {}) {
 
   merged.sort((a, b) => b.score - a.score)
   return merged.slice(0, topK)
+}
+
+// Hằng số giảm chấn của Reciprocal Rank Fusion. 60 là giá trị chuẩn trong tài
+// liệu gốc: đủ lớn để một hạng nhất đơn lẻ không áp đảo, nên chunk được nhiều
+// truy vấn con cùng tìm thấy sẽ vượt lên chunk chỉ đứng đầu ở đúng một truy vấn.
+const RRF_K = 60
+
+/**
+ * Chạy nhiều truy vấn rồi hợp nhất bằng Reciprocal Rank Fusion.
+ *
+ * Dùng thứ HẠNG chứ không dùng điểm: điểm của hai truy vấn khác nhau không so
+ * sánh được với nhau (thang BM25 phụ thuộc độ hiếm của từ trong chính truy vấn
+ * đó), nên cộng điểm thẳng sẽ thiên vị truy vấn nào tình cờ có điểm cao.
+ */
+export async function multiHybridSearch(queries, { topK = 20, mode = 'vn_only' } = {}) {
+  const list = [...new Set((queries || []).map((q) => (q || '').trim()).filter(Boolean))]
+  if (!list.length) return []
+  if (list.length === 1) return hybridSearch(list[0], { topK, mode })
+
+  // Mỗi truy vấn con lấy dư để phần giao nhau có chỗ thể hiện; nếu chỉ lấy
+  // đúng topK thì chunk xếp hạng trung bình ở mọi truy vấn sẽ bị cắt trước khi
+  // kịp cộng dồn.
+  const perQuery = Math.max(topK, 10)
+  const settled = await Promise.allSettled(
+    list.map((q) => hybridSearch(q, { topK: perQuery, mode }))
+  )
+
+  const fused = new Map() // id -> { chunk, rrf, hits }
+  settled.forEach((res, qi) => {
+    if (res.status !== 'fulfilled') {
+      console.error(`[multi-search] truy vấn ${qi} lỗi:`, res.reason?.message)
+      return
+    }
+    res.value.forEach((chunk, rank) => {
+      const prev = fused.get(chunk.id)
+      const inc = 1 / (RRF_K + rank + 1)
+      if (prev) {
+        prev.rrf += inc
+        prev.hits += 1
+      } else {
+        fused.set(chunk.id, { chunk, rrf: inc, hits: 1 })
+      }
+    })
+  })
+
+  return [...fused.values()]
+    .sort((a, b) => b.rrf - a.rrf)
+    .slice(0, topK)
+    .map(({ chunk, rrf, hits }) => ({ ...chunk, rrf_score: rrf, matched_queries: hits }))
 }

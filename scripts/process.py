@@ -107,12 +107,18 @@ def process_file(filepath, client, force=False):
         return None
     try:
         msg = client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=2000,
+            model=os.environ.get("VSEC_DEFAULT_MODEL", "claude-sonnet-5"),
+            # max_tokens la tran chung cho thinking + cau tra loi. Sonnet 5 bat
+            # thinking mac dinh, 2000 khong du de vua nghi vua xuat markdown.
+            max_tokens=8000,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": f"Chuan hoa tai lieu:\nFile: {filepath.name}\n\n{raw_text[:8000]}"}]
         )
-        md_content = msg.content[0].text
+        # content[0] co the la khoi thinking -> .text la None. Ghep cac khoi text.
+        md_content = "".join(b.text for b in msg.content if b.type == "text").strip()
+        if not md_content:
+            print(f"  [LOI] Khong co noi dung tra ve (stop_reason={msg.stop_reason})")
+            return None
         MD_DIR.mkdir(parents=True, exist_ok=True)
         md_path.write_text(md_content, encoding="utf-8")
         meta = parse_frontmatter(md_content, filepath.name)

@@ -30,7 +30,9 @@ export async function callClaude({
   system,
   messages,
   maxTokens = 8000,
-  effort = 'low', // low|medium|high|xhigh|max — 'low' đủ tốt cho hỏi-đáp, giữ độ trễ thấp
+  // low|medium|high|xhigh|max — 'low' đủ tốt cho hỏi-đáp, giữ độ trễ thấp.
+  // Đặt null để BỎ HẲN: Haiku 4.5 không nhận output_config.effort và sẽ trả 400.
+  effort = 'low',
 }) {
   const res = await fetch(CLAUDE_URL, {
     method: 'POST',
@@ -44,7 +46,7 @@ export async function callClaude({
       max_tokens: maxTokens,
       system,
       messages,
-      output_config: { effort },
+      ...(effort ? { output_config: { effort } } : {}),
     }),
   })
 
