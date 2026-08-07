@@ -4,6 +4,12 @@ import { authOptions } from '@/lib/auth'
 import { getSupabase } from '@/lib/supabase'
 import { extractText } from '@/lib/claude'
 
+// Route luôn phụ thuộc phiên đăng nhập nên không bao giờ pre-render tĩnh được.
+// Khai báo sẵn để Next khỏi thử: nếu không, lúc build `getServerSession` sẽ gọi
+// headers() và Next ném DYNAMIC_SERVER_USAGE để tự nhận biết — khối catch bên
+// dưới bắt được rồi in ra như một lỗi thật, gây hiểu nhầm là build hỏng.
+export const dynamic = 'force-dynamic'
+
 const MODEL = process.env.VSEC_COMPARE_MODEL ?? 'claude-sonnet-5'
 
 const SYSTEM_NEWSLETTER = `Bạn là biên tập viên bản tin kỹ thuật của Công ty VIETSAFE E&C — chuyên về PCCC.
