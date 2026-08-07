@@ -1,11 +1,14 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 
-// Cost estimates for Claude Haiku
-const COST_PER_QUESTION = 0.003 // ~$0.003 per Q&A (input + output tokens)
-const DAILY_BUDGET = 0.30 // $0.30/user/day
-const WARNING_THRESHOLD = 0.8 // Warn at 80% of budget
-
+/**
+ * Thanh trạng thái phiên làm việc: thời gian và số câu hỏi.
+ *
+ * Phần ước lượng chi phí (dạng "$0.000/$0.30") đã bỏ: nó tính cứng theo giá
+ * Haiku và ngân sách USD, cả hai đều sai sau khi chuyển sang Sonnet 5 và hạn
+ * mức tính bằng VND. Mức sử dụng thật hiển thị bằng thanh nhỏ dưới ô nhập,
+ * lấy từ chi tiêu thực tế chứ không phải ước lượng.
+ */
 export default function UsageTracker({ questionCount }) {
   const [sessionStart] = useState(Date.now())
   const [elapsed, setElapsed] = useState('0:00')
@@ -20,43 +23,17 @@ export default function UsageTracker({ questionCount }) {
     return () => clearInterval(timer)
   }, [sessionStart])
 
-  const estimatedCost = questionCount * COST_PER_QUESTION
-  const budgetPercent = Math.min(100, (estimatedCost / DAILY_BUDGET) * 100)
-  const isWarning = budgetPercent >= WARNING_THRESHOLD * 100
-  const isOver = budgetPercent >= 100
+  if (!questionCount) return null
 
   return (
-    <div className={`px-3 py-1.5 border-t text-[10px] flex items-center gap-3 ${
-      isOver ? 'bg-red-50 border-red-200' : isWarning ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-200'
-    }`}>
-      {/* Session time */}
-      <span className="text-vs-gray-mid flex items-center gap-1">
-        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    <div className="px-3 py-1 border-t border-gray-200 bg-gray-50 text-[10px] flex items-center gap-3 text-vs-gray-mid">
+      <span className="flex items-center gap-1">
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
+        </svg>
         {elapsed}
       </span>
-
-      {/* Questions count */}
-      <span className="text-vs-gray-mid">
-        {questionCount} câu hỏi
-      </span>
-
-      {/* Cost bar */}
-      <div className="flex-1 flex items-center gap-1.5">
-        <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-          <div className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${budgetPercent}%`,
-              background: isOver ? '#ef4444' : isWarning ? '#f59e0b' : '#22c55e'
-            }} />
-        </div>
-        <span className={`font-medium ${isOver ? 'text-red-600' : isWarning ? 'text-yellow-600' : 'text-vs-gray-mid'}`}>
-          ${estimatedCost.toFixed(3)}/${DAILY_BUDGET.toFixed(2)}
-        </span>
-      </div>
-
-      {/* Warning */}
-      {isOver && <span className="text-red-600 font-medium">⚠️ Vượt ngân sách!</span>}
-      {isWarning && !isOver && <span className="text-yellow-600">⚡ Gần hết ngân sách</span>}
+      <span>{questionCount} câu hỏi</span>
     </div>
   )
 }
