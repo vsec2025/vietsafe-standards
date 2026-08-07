@@ -114,20 +114,31 @@ async function throttle(n) {
   for (let i = 0; i < n; i++) sentAt.push(t)
 }
 
-/** Gọi embed có thử lại: 429 thì chờ đúng khoảng Google yêu cầu rồi làm lại. */
+/** Lỗi hạn mức NGÀY — không thể chờ hết trong phiên chạy, phải dừng hẳn. */
+class DailyQuotaError extends Error {}
+
+/** Gọi embed có thử lại: 429 theo phút thì chờ rồi làm lại; theo ngày thì dừng. */
 async function embedBatchSafe(texts, attempt = 0) {
   await throttle(texts.length)
   try {
     return await embedBatch(texts)
   } catch (e) {
     const msg = String(e.message || '')
-    const is429 = /429|RESOURCE_EXHAUSTED/.test(msg)
-    if (!is429 || attempt >= 6) throw e
+    if (!/429|RESOURCE_EXHAUSTED/.test(msg)) throw e
+
+    // Google trả retryDelay ~58s cho CẢ hạn mức ngày, nên bám theo con số đó
+    // sẽ thử lại vô ích hàng giờ. Phân biệt bằng quotaId.
+    if (/PerDay/i.test(msg)) {
+      const lim = /"quotaValue":\s*"(\d+)"/.exec(msg)?.[1] ?? '1000'
+      throw new DailyQuotaError(`Đã dùng hết hạn mức ${lim} lượt embed/ngày của gói free.`)
+    }
+
+    if (attempt >= 6) throw e
     const m = /retryDelay[^0-9]*([0-9.]+)s/.exec(msg)
     const wait = Math.ceil((m ? parseFloat(m[1]) : 60) * 1000) + 1500
-    process.stdout.write(`\r   ⏳ Vượt hạn mức, chờ ${Math.ceil(wait / 1000)}s rồi thử lại...        `)
+    process.stdout.write(`\r   ⏳ Vượt hạn mức phút, chờ ${Math.ceil(wait / 1000)}s rồi thử lại...     `)
     await sleep(wait)
-    sentAt.length = 0 // cửa sổ cũ không còn ý nghĩa sau khi chờ
+    sentAt.length = 0
     return embedBatchSafe(texts, attempt + 1)
   }
 }
@@ -256,9 +267,18 @@ async function main() {
 
   const t0 = Date.now()
   let done = 0
+  let stoppedByQuota = null
   for (let i = 0; i < toUpsert.length; i += EMBED_BATCH) {
     const batch = toUpsert.slice(i, i + EMBED_BATCH)
-    const vectors = await embedBatchSafe(batch.map((b) => b.text))
+    let vectors
+    try {
+      vectors = await embedBatchSafe(batch.map((b) => b.text))
+    } catch (e) {
+      // Hết hạn mức ngày: dừng gọn, GIỮ NGUYÊN phần đã nạp. Lần chạy sau
+      // bỏ qua chúng nhờ so hash, nên coi như tiếp tục từ đây.
+      if (e instanceof DailyQuotaError) { stoppedByQuota = e.message; break }
+      throw e
+    }
 
     const items = batch.map((b, j) => ({
       id: b.id,
@@ -291,6 +311,21 @@ async function main() {
   if (toUpsert.length) console.log()
 
   const final = await vec('/info')
+
+  if (stoppedByQuota) {
+    const remaining = toUpsert.length - done
+    console.log(`\n⏸  DỪNG GIỮA CHỪNG — ${stoppedByQuota}`)
+    console.log(`   Đã nạp phiên này: ${done}. Còn lại: ${remaining}.`)
+    console.log(`   Index hiện có: ${final.vectorCount ?? '?'} / ${chunks.length} chunks.\n`)
+    console.log('   Cách đi tiếp — chọn một:')
+    console.log('   1) Chạy lại `npm run ingest` sau khi hạn mức ngày reset (0h giờ Thái Bình Dương,')
+    console.log('      tức khoảng 14–15h giờ Việt Nam). Script tự bỏ qua phần đã nạp.')
+    console.log('   2) Bật thanh toán cho Google API để bỏ trần 1.000/ngày. Toàn bộ corpus này')
+    console.log('      chỉ tốn khoảng 0,05 USD tiền embedding — rẻ hơn nhiều so với chờ nhiều ngày.')
+    console.log('      https://aistudio.google.com/apikey → chọn project → Set up Billing\n')
+    process.exit(2)
+  }
+
   console.log(`\n✅  Hoàn thành. Index: ${final.vectorCount ?? '?'} vectors (corpus: ${chunks.length} chunks)\n`)
 }
 
