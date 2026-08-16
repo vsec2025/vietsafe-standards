@@ -24,13 +24,26 @@ function priceOf(model) {
   return key ? MODEL_PRICES[key] : DEFAULT_PRICE
 }
 
-export function costUsd(model, inputTokens = 0, outputTokens = 0) {
+// Hệ số giá của prompt caching, nhân với giá token vào:
+//  - đọc lại từ cache rẻ hơn 10 lần
+//  - ghi cache đắt hơn: 1,25x với TTL 5 phút, 2x với TTL 1 giờ (ta dùng 1 giờ)
+export const CACHE_READ_MULT = 0.1
+export const CACHE_WRITE_MULT = process.env.VSEC_CACHE_TTL === '5m' ? 1.25 : 2
+
+/**
+ * `cache` = { read, write } số token đọc từ cache và ghi vào cache.
+ * Bỏ qua hai con số này thì hạn mức đếm token cache theo giá đầy đủ — sai gấp
+ * 10 lần ở chiều đọc, và thiếu ở chiều ghi.
+ */
+export function costUsd(model, inputTokens = 0, outputTokens = 0, cache = null) {
   const p = priceOf(model)
-  return (inputTokens * p.input + outputTokens * p.output) / 1_000_000
+  const cached =
+    ((cache?.read ?? 0) * CACHE_READ_MULT + (cache?.write ?? 0) * CACHE_WRITE_MULT) * p.input
+  return (inputTokens * p.input + outputTokens * p.output + cached) / 1_000_000
 }
 
-export function costVnd(model, inputTokens = 0, outputTokens = 0) {
-  return costUsd(model, inputTokens, outputTokens) * USD_VND
+export function costVnd(model, inputTokens = 0, outputTokens = 0, cache = null) {
+  return costUsd(model, inputTokens, outputTokens, cache) * USD_VND
 }
 
 export const formatVnd = (v) => `${Math.round(v).toLocaleString('vi-VN')} ₫`

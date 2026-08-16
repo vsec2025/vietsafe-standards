@@ -3,8 +3,9 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { multiHybridSearch } from '@/lib/hybrid-search'
 import { expandQuery } from '@/lib/query-expand'
+import { selectChapters } from '@/lib/chapters'
 import { logQuery, getDailyUsage, upsertUserProfile, incrementTokenUsage } from '@/lib/supabase'
-import { formatVnd, costVnd } from '@/lib/pricing'
+import { formatVnd, costVnd, CACHE_READ_MULT, CACHE_WRITE_MULT } from '@/lib/pricing'
 import { callClaude } from '@/lib/claude'
 import { anchorOf } from '@/lib/documents'
 
@@ -106,7 +107,14 @@ export async function POST(request) {
     // về những đoạn na ná câu hỏi.
     const { queries, usage: expandUsage } = await expandQuery(message, apiKey)
     const chunks = await multiHybridSearch(queries, { topK, mode })
-    const activeChunks = chunks.filter((r) => !r._superseded)
+    const hits = chunks.filter((r) => !r._superseded)
+
+    // Nạp trọn chương chứa các điều khoản trúng, cộng chương chủ quản của mọi
+    // bảng/phụ lục mà chúng viện dẫn. Rơi về đúng 20 điều khoản cũ nếu chương
+    // quá lớn — xem selectChapters().
+    const CTX_LIMIT = parseInt(process.env.VSEC_CONTEXT_LIMIT ?? '80000', 10)
+    const picked = await selectChapters(hits, { limit: CTX_LIMIT })
+    const activeChunks = picked.rows.filter((r) => !r._superseded)
 
     const context = activeChunks
       .map((r, i) => {
@@ -115,7 +123,10 @@ export async function POST(request) {
         // trích dẫn sai — nguy hiểm hơn là không có trích dẫn.
         const docName =
           r.van_ban || r.so_hieu || `${r.loai || 'Văn bản'} (chưa xác định số hiệu)`
-        const section = [r.phan, r.don_vi, r.tieu_de].filter(Boolean).join(' — ')
+        // `phan` sai ở 26% corpus (dòng mục lục, mảnh câu bị nhận nhầm là tiêu
+        // đề phần). Nhãn sai còn tệ hơn không nhãn, nên chỉ dùng số hiệu điều
+        // khoản và tiêu đề của chính nó — hai trường này tin được.
+        const section = [r.don_vi, r.tieu_de].filter(Boolean).join(' — ')
         return `[${i + 1}] ${docName} | ${section}\n${r.content || r.text || ''}`
       })
       .join('\n\n---\n\n')
@@ -135,6 +146,10 @@ export async function POST(request) {
         system: systemPrompt,
         messages,
         maxTokens: 8000, // trần chung cho thinking + câu trả lời
+        // Chỉ cache khi ngữ cảnh là chương: nó đủ lớn để đáng cache và lặp lại
+        // y hệt giữa các câu hỏi cùng chạm một nhóm chương. Ngữ cảnh clause-level
+        // gần như không bao giờ trùng byte nên cache chỉ tổ tốn phí ghi.
+        cacheSystem: picked.mode === 'chapter',
       })
       rawReply = out.text
       aiData = out.raw
@@ -153,7 +168,7 @@ export async function POST(request) {
     // metadata (người dùng sẽ tin vào một trích dẫn không kiểm chứng được).
     const hasIdentifiedSource = activeChunks.some((r) => r.van_ban || r.so_hieu)
     const has_basis = /HAS_BASIS:\s*true/i.test(rawReply) && hasIdentifiedSource
-    const reply = rawReply.replace(/HAS_BASIS:\s*(true|false)/i, '').trim()
+    let reply = rawReply.replace(/HAS_BASIS:\s*(true|false)/i, '').trim()
 
     const latency_ms = Date.now() - startTime
 
@@ -161,12 +176,18 @@ export async function POST(request) {
     // bỏ qua thì hạn mức ngày đếm thiếu so với hoá đơn thật.
     const inputTokens = (aiData.usage?.input_tokens ?? 0) + expandUsage.input
     const outputTokens = (aiData.usage?.output_tokens ?? 0) + expandUsage.output
+    const cacheUsage = {
+      read: aiData.usage?.cache_read_input_tokens ?? 0,
+      write: aiData.usage?.cache_creation_input_tokens ?? 0,
+    }
 
-    // Kèm luôn nội dung điều khoản để giao diện mở ngay bên dưới câu trả lời,
-    // không phải rời trang hay gọi thêm API. Cắt bớt để không phình payload —
-    // muốn đọc trọn thì có liên kết sang trang đọc.
+    // Ngữ cảnh giờ có thể là vài trăm điều khoản, nhưng chỉ vài cái được trích.
+    // Trả hết về client là ~400 KB payload và một danh sách nguồn vô dụng, nên
+    // chỉ giữ những điều khoản Claude thực sự dẫn, rồi ĐÁNH SỐ LẠI cho liền
+    // mạch — giao diện ánh xạ [n] -> sources[n-1] theo vị trí, nên bỏ số giữa
+    // chừng là mọi chú thích phía sau trỏ sai điều khoản.
     const EXCERPT = 1400
-    const citations = activeChunks.map((r) => {
+    const toCitation = (r) => {
       const full = r.content || r.text || ''
       return {
         id: r.id,
@@ -180,7 +201,37 @@ export async function POST(request) {
         truncated: full.length > EXCERPT,
         score: r.score,
       }
+    }
+
+    const CITE_RE = /\[(\d{1,3})\]/g
+    const renumber = new Map() // số cũ trong ngữ cảnh -> số mới liên tục
+    const citations = []
+    for (const m of reply.matchAll(CITE_RE)) {
+      const old = parseInt(m[1], 10)
+      const row = activeChunks[old - 1]
+      if (!row || renumber.has(old)) continue
+      renumber.set(old, citations.push(toCitation(row))) // push() trả về độ dài = số mới
+    }
+    // Số nằm ngoài ngữ cảnh (Claude bịa) bị gỡ hẳn thay vì để lại chú thích
+    // chết trỏ vào khoảng không.
+    reply = reply.replace(CITE_RE, (full, d) => {
+      const n = renumber.get(parseInt(d, 10))
+      return n ? `[${n}]` : ''
     })
+
+    // Không trích được gì mà vẫn có kết quả tìm kiếm thì đưa ra các điều khoản
+    // khớp nhất, để người dùng còn có đầu mối kiểm chứng.
+    if (!citations.length) citations.push(...hits.slice(0, 8).map(toCitation))
+
+    // query_logs không có cột cho token cache, và hạn mức ngày được TÍNH LẠI
+    // từ input_tokens/output_tokens của bảng đó. Thêm cột thì cần migration
+    // Supabase; nếu cột chưa tồn tại, logQuery hỏng câm (nó .catch) -> không
+    // ghi log -> hạn mức đọc ra 0 -> mất trần chi tiêu. Nên quy đổi token cache
+    // về "token vào tương đương" theo đúng hệ số giá: con số này không còn là
+    // số token thô, nhưng cho ra đúng số tiền.
+    const billedInputTokens = Math.round(
+      inputTokens + cacheUsage.read * CACHE_READ_MULT + cacheUsage.write * CACHE_WRITE_MULT
+    )
 
     const [logId] = await Promise.all([
       logQuery({
@@ -191,21 +242,24 @@ export async function POST(request) {
         citations,
         has_basis,
         model_used: model,
-        input_tokens: inputTokens,
+        input_tokens: billedInputTokens,
         output_tokens: outputTokens,
         latency_ms,
       }).catch(() => null),
-      incrementTokenUsage(session.user.email, inputTokens, outputTokens).catch(() => {}),
+      incrementTokenUsage(session.user.email, billedInputTokens, outputTokens).catch(() => {}),
     ])
 
-    const costThisTurn = costVnd(model, inputTokens, outputTokens)
+    const costThisTurn = costVnd(model, inputTokens, outputTokens, cacheUsage)
 
     return NextResponse.json({
       reply,
       has_basis,
       model_used: model,
       sources: citations,
-      token_usage: { input: inputTokens, output: outputTokens },
+      token_usage: { input: inputTokens, output: outputTokens, cache: cacheUsage },
+      // Để đối chiếu trên production: nạp theo chương hay đã rơi về điều khoản
+      context: { mode: picked.mode, chapters: picked.labels, tokens: Math.round(picked.tokens),
+                 refs: `${picked.refsResolved}/${picked.refsTotal}`, reason: picked.reason },
       // Chi phí lượt này + hạn mức còn lại, để giao diện hiện cho người dùng
       cost_vnd: Math.round(costThisTurn),
       quota: usage.ok

@@ -10,6 +10,12 @@
 
 export const CLAUDE_URL = 'https://api.anthropic.com/v1/messages'
 
+// TTL của prompt cache: '1h' (ghi tốn 2x giá vào) hoặc '5m' (ghi tốn 1,25x).
+// 1 giờ phủ trọn một buổi làm việc nhưng phải có từ 3 lượt đọc mới hoà; 5 phút
+// rẻ hơn khi ghi, hoà từ lượt thứ 2, nhưng hết hạn giữa chừng. Đổi khi đã biết
+// nhịp dùng thật.
+const CACHE_TTL = process.env.VSEC_CACHE_TTL === '5m' ? '5m' : '1h'
+
 /** Ghép toàn bộ khối `text`, bỏ qua thinking và các loại khối khác. */
 export function extractText(data) {
   if (!Array.isArray(data?.content)) return ''
@@ -33,6 +39,11 @@ export async function callClaude({
   // low|medium|high|xhigh|max — 'low' đủ tốt cho hỏi-đáp, giữ độ trễ thấp.
   // Đặt null để BỎ HẲN: Haiku 4.5 không nhận output_config.effort và sẽ trả 400.
   effort = 'low',
+  // Bật prompt caching cho khối system. Ngữ cảnh nạp theo chương nặng ~69k
+  // token và lặp lại y hệt giữa các câu hỏi cùng chạm một nhóm chương; đọc lại
+  // từ cache chỉ tốn 0,1x giá gốc. Ghi cache tốn 2x (TTL 1 giờ) nên chỉ có lãi
+  // từ câu thứ 3 trở đi — xem ghi chú trong chat route.
+  cacheSystem = false,
 }) {
   const res = await fetch(CLAUDE_URL, {
     method: 'POST',
@@ -44,7 +55,12 @@ export async function callClaude({
     body: JSON.stringify({
       model,
       max_tokens: maxTokens,
-      system,
+      // Cache là so khớp TIỀN TỐ: đổi một byte trong system là hỏng toàn bộ.
+      // Vì vậy system phải được dựng tất định và mọi thứ biến thiên (câu hỏi,
+      // lịch sử) phải nằm trong messages, tức là SAU điểm cache.
+      system: cacheSystem
+        ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: CACHE_TTL } }]
+        : system,
       messages,
       ...(effort ? { output_config: { effort } } : {}),
     }),
