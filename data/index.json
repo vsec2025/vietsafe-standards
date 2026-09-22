@@ -1,6 +1,6 @@
 {
-  "last_updated": "2026-08-07T14:14:19Z",
-  "total_chunks": 3026,
+  "last_updated": "2026-09-22T06:47:02Z",
+  "total_chunks": 3054,
   "van_ban": [
     {
       "so_hieu": "11 TCN-18:2006",
@@ -14,8 +14,8 @@
     },
     {
       "so_hieu": "QCVN 06:2022/BXD",
-      "chunks": 654,
-      "tokens": 211434
+      "chunks": 682,
+      "tokens": 221560
     },
     {
       "so_hieu": "QCVN 10:2025/BCA",
